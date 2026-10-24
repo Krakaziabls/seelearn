@@ -119,19 +119,33 @@ What does yield do in Python?
   assert.ok(card2.tags.includes('python'));
 });
 
-test('parseCardsFromMarkdown validates missing front or back', () => {
-  const md = `
-%% @card #incomplete %%
+test('parseCardsFromMarkdown allows front-only info cards and validates missing front', () => {
+  // Front-only info card (valid!)
+  const mdInfo = `
+%% @card #info #important %%
 %% @front %%
-Only front here...
+Formula: E = mc^2
 %% @end %%
 `;
+  const resultInfo = parseCardsFromMarkdown('notes/info.md', 'info.md', mdInfo, []);
+  assert.strictEqual(resultInfo.warnings.length, 0);
+  assert.strictEqual(resultInfo.cards.length, 1);
+  assert.strictEqual(resultInfo.cards[0].hasBack, false);
+  assert.strictEqual(resultInfo.cards[0].front, 'Formula: E = mc^2');
 
-  const result = parseCardsFromMarkdown('notes/test.md', 'test.md', md, []);
-  assert.strictEqual(result.cards.length, 0);
-  assert.strictEqual(result.warnings.length, 1);
-  assert.ok(result.warnings[0].message.includes('отсутствует обязательный блок @back'));
+  // Missing @front (invalid!)
+  const mdMissingFront = `
+%% @card #broken %%
+%% @back %%
+Only back without front...
+%% @end %%
+`;
+  const resultMissing = parseCardsFromMarkdown('notes/broken.md', 'broken.md', mdMissingFront, []);
+  assert.strictEqual(resultMissing.cards.length, 0);
+  assert.strictEqual(resultMissing.warnings.length, 1);
+  assert.ok(resultMissing.warnings[0].message.includes('отсутствует обязательный блок @front'));
 });
+
 
 test('parseCardsFromMarkdown validates multiple front blocks', () => {
   const md = `

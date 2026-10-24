@@ -35,6 +35,42 @@
   gap: 8px;
 }
 
+/* Mode Switch (Ботать / Проверить знания) */
+.seelearn-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 6px);
+  padding: 2px;
+  gap: 2px;
+}
+
+.seelearn-mode-btn {
+  font-size: 0.82em;
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--radius-s, 4px);
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.15s ease-in-out;
+  line-height: 1.2;
+}
+
+.seelearn-mode-btn:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+.seelearn-mode-btn.is-active {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
 .seelearn-file-select {
   max-width: 240px;
   font-size: 0.88em;
@@ -158,6 +194,68 @@
   background: rgba(255, 255, 255, 0.25);
 }
 
+/* Inline Tag / Topic Search in Tags Bar */
+.seelearn-tag-search-box {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s, 4px);
+  padding: 2px 6px;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.seelearn-tag-search-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+}
+
+.seelearn-tag-search-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.seelearn-tag-search-input {
+  border: none !important;
+  background: transparent !important;
+  color: var(--text-normal);
+  font-size: 0.8em;
+  padding: 0 2px !important;
+  outline: none !important;
+  box-shadow: none !important;
+  width: 110px;
+}
+
+.seelearn-tag-search-clear {
+  cursor: pointer;
+  color: var(--text-faint);
+  font-size: 1.1em;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.seelearn-tag-search-clear:hover {
+  color: var(--text-normal);
+}
+
+.seelearn-tags-chips-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+
+.seelearn-tags-empty-hint {
+  font-size: 0.8em;
+  color: var(--text-faint);
+  font-style: italic;
+  padding: 2px 8px;
+}
+
 /* --------------------------------------------------------------------------
    Card Study Area
    -------------------------------------------------------------------------- */
@@ -183,14 +281,46 @@
   border-radius: var(--radius-l, 12px);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
   overflow: hidden;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.25s ease, box-shadow 0.2s ease;
 }
 
 .seelearn-card-container:hover {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
-/* Card Header */
+/* 3D Flip Animation */
+.seelearn-card-container.seelearn-enable-3d.is-flipped {
+  animation: seelearnCardFlip 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes seelearnCardFlip {
+  0% {
+    transform: rotateX(0deg) scale(1);
+  }
+  50% {
+    transform: rotateX(6deg) scale(0.985);
+  }
+  100% {
+    transform: rotateX(0deg) scale(1);
+  }
+}
+
+/* Card Progress Bar Track & Fill */
+.seelearn-progress-track {
+  width: 100%;
+  height: 4px;
+  background-color: var(--background-modifier-border);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.seelearn-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--interactive-accent), var(--color-green, #10b981));
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Card Header - Single line flex layout protecting against overflow */
 .seelearn-card-header {
   display: flex;
   justify-content: space-between;
@@ -199,17 +329,23 @@
   border-bottom: 1px solid var(--background-modifier-border);
   background-color: var(--background-secondary-alt, var(--background-secondary));
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .seelearn-header-left {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .seelearn-progress-pill {
+  flex-shrink: 0;
   font-size: 0.76em;
   padding: 2px 8px;
   border-radius: 10px;
@@ -230,13 +366,38 @@
   border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
+.seelearn-progress-pill.is-info {
+  background-color: rgba(99, 102, 241, 0.15);
+  color: var(--interactive-accent, #6366f1);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+}
+
+.seelearn-progress-pill.is-learn {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+}
+
 .seelearn-card-tags {
   display: flex;
+  align-items: center;
   gap: 5px;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  mask-image: linear-gradient(to right, black 85%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
+}
+
+.seelearn-card-tags::-webkit-scrollbar {
+  display: none;
 }
 
 .seelearn-card-tag-pill {
+  flex-shrink: 0;
   font-size: 0.78em;
   padding: 2px 7px;
   border-radius: 10px;
@@ -245,11 +406,12 @@
   font-weight: 500;
 }
 
-
 .seelearn-header-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .seelearn-file-link {
@@ -587,3 +749,77 @@
   color: var(--text-muted);
   font-size: 0.9em;
 }
+
+/* --------------------------------------------------------------------------
+   Session Summary Dashboard & Stats
+   -------------------------------------------------------------------------- */
+.seelearn-icon-celebrate {
+  color: var(--color-yellow, #eab308);
+  margin-bottom: 12px;
+}
+
+.seelearn-icon-celebrate svg {
+  width: 52px;
+  height: 52px;
+}
+
+.seelearn-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  width: 100%;
+  max-width: 500px;
+  margin: 20px 0;
+}
+
+.seelearn-stat-card {
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.seelearn-stat-val {
+  font-size: 1.6em;
+  font-weight: 700;
+  color: var(--interactive-accent);
+  line-height: 1.2;
+}
+
+.seelearn-stat-lbl {
+  font-size: 0.78em;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.seelearn-summary-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+/* --------------------------------------------------------------------------
+   Undo Button (Ctrl+Z)
+   -------------------------------------------------------------------------- */
+.seelearn-btn-undo {
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: 0.85em;
+  transition: all 0.15s ease;
+}
+
+.seelearn-btn-undo:hover:not(:disabled) {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+  border-color: var(--text-faint);
+}
+

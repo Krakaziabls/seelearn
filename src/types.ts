@@ -1,5 +1,5 @@
 export type RevealMode = 'replace' | 'append';
-export type StudyMode = 'srs' | 'cram';
+export type StudyMode = 'learn' | 'test' | 'srs' | 'cram';
 export type SRSQueueFilter = 'all' | 'due' | 'new';
 export type SRSRatingValue = 'again' | 'hard' | 'good' | 'easy' | 'know' | 'repeat' | number;
 
@@ -29,6 +29,7 @@ export interface SeeLearnSettings {
   autoFlipOnSpace: boolean;
   shuffleOnStart: boolean;
   interleaveTopics: boolean;
+  enable3DFlip: boolean;
   requeueStep: number;
   maxNewPerSession: number;
   maxDuePerSession: number;
@@ -39,16 +40,16 @@ export const DEFAULT_SETTINGS: SeeLearnSettings = {
   triggerValue: 'seelearn',
   topicProperty: 'topics',
   revealMode: 'append',
-  studyMode: 'srs',
+  studyMode: 'learn', // По умолчанию режим "Ботать"
   srsFilter: 'all',
   autoFlipOnSpace: true,
   shuffleOnStart: false,
   interleaveTopics: true,
+  enable3DFlip: true,
   requeueStep: 3,
   maxNewPerSession: 25,
   maxDuePerSession: 50,
 };
-
 
 export interface SeeLearnStorageData {
   version: number;
@@ -71,6 +72,7 @@ export interface Flashcard {
   lineEnd: number;
   front: string;
   back: string;
+  hasBack: boolean; // false for front-only info cards
   tags: string[];
   globalTopics: string[];
   localTags: string[];

@@ -308,9 +308,7 @@ export function parseCardsFromMarkdown(
             cardErrors.push(`обнаружено несколько блоков @front (${frontCount})`);
           }
 
-          if (backCount === 0) {
-            cardErrors.push('отсутствует обязательный блок @back');
-          } else if (backCount > 1) {
+          if (backCount > 1) {
             cardErrors.push(`обнаружено несколько блоков @back (${backCount})`);
           }
 
@@ -321,12 +319,13 @@ export function parseCardsFromMarkdown(
               message: `Невалидная карточка (строки ${cardStartLine}-${lineNumber}): ${cardErrors.join(', ')}`,
             });
           } else {
-            // Valid card!
+            // Valid card! (either two-sided or front-only info card)
             const localTags = extractLocalTags(cardArgs);
             const mergedTags = Array.from(new Set([...globalTopics, ...localTags]));
 
             const frontContent = frontLines.join('\n').trim();
             const backContent = backLines.join('\n').trim();
+            const hasBack = backCount === 1 && backContent.length > 0;
             const customId = extractCustomId(cardArgs);
 
             const normFront = normalizeCardContent(frontContent);
@@ -344,11 +343,13 @@ export function parseCardsFromMarkdown(
               lineEnd: lineNumber,
               front: frontContent,
               back: backContent,
+              hasBack,
               tags: mergedTags,
               globalTopics,
               localTags,
             });
           }
+
 
           // Reset card state
           inCard = false;

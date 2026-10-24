@@ -59,17 +59,31 @@ export class SeeLearnSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Режим обучения (Study Mode)')
-      .setDesc('Выберите механику обучения: умное интервальное повторение (SM-2) или свободное повторение всех карточек (Cram Mode).')
+      .setName('Режим обучения по умолчанию (Default Study Mode)')
+      .setDesc('Выберите режим по умолчанию: «Ботать» (изучение и просмотр без оценок) или «Проверить знания» (SM-2 интервальное тестирование).')
       .addDropdown((dropdown) =>
         dropdown
-          .addOption('srs', 'Интервальное повторение SM-2 (4 оценки: Снова, Трудно, Хорошо, Легко)')
+          .addOption('learn', '📖 Ботать (Изучение и чтение карточек без оценок - по умолчанию)')
+          .addOption('test', '🎯 Проверить знания (Интервальное повторение SM-2, оценки 1-4)')
+          .addOption('srs', 'SM-2 Интервальное повторение (классический режим)')
           .addOption('cram', 'Свободная зубрежка (Cram Mode: Повторить позже / Знаю)')
           .setValue(this.plugin.settings.studyMode)
           .onChange(async (value: string) => {
             this.plugin.settings.studyMode = value as any;
             await this.plugin.saveSettings();
             this.plugin.reloadAllCards();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('3D-анимация переворота (3D Flip)')
+      .setDesc('Включить плавную 3D-анимацию переворота карточки при показе ответа.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enable3DFlip)
+          .onChange(async (value) => {
+            this.plugin.settings.enable3DFlip = value;
+            await this.plugin.saveSettings();
           })
       );
 

@@ -10,22 +10,43 @@ import {
   App,
 } from 'obsidian';
 import type SeeLearnPlugin from './main';
-import { Flashcard, SRSQueueFilter, ValidationWarning } from './types';
+import { CardProgressRecord, Flashcard, SRSQueueFilter, ValidationWarning } from './types';
 import { fisherYatesShuffle, interleaveCards } from './shuffle';
 import { getSRSIntervalPreviews, isCardDue, isCardNew, SRSRating } from './srs';
 
 export const VIEW_TYPE_SEELEARN = 'seelearn-study-view';
 
+interface HistoryEntry {
+  cardId: string;
+  queueSnapshot: Flashcard[];
+  currentIndex: number;
+  isFlipped: boolean;
+  previousProgressRecord?: CardProgressRecord;
+}
+
 export class StudyView extends ItemView {
   plugin: SeeLearnPlugin;
   private selectedTags: Set<string> = new Set();
-  private selectedFile: string = '';
+  private selectedScope: string = ''; // '' for all, 'folder:...' or 'file:...'
   private srsFilter: SRSQueueFilter = 'all';
+  private tagSearchQuery: string = '';
   private sessionQueue: Flashcard[] = [];
   private currentIndex: number = 0;
   private isFlipped: boolean = false;
   private activeCardComponent: Component | null = null;
 
+  // Session metrics for summary dashboard
+  private sessionStats = {
+    totalReviewed: 0,
+    againCount: 0,
+    hardCount: 0,
+    goodCount: 0,
+    easyCount: 0,
+    failedCards: [] as Flashcard[],
+  };
+
+  // Undo history stack
+  private historyStack: HistoryEntry[] = [];
 
   // DOM Elements
   private toolbarEl!: HTMLElement;
@@ -76,6 +97,13 @@ export class StudyView extends ItemView {
         return;
       }
 
+      // Undo: Ctrl+Z / Cmd+Z / Key U
+      if ((evt.ctrlKey || evt.metaKey) && evt.code === 'KeyZ') {
+        evt.preventDefault();
+        this.undoLastAction();
+        return;
+      }
+
       if (evt.code === 'Space') {
         if (this.plugin.settings.autoFlipOnSpace) {
           evt.preventDefault();
@@ -87,7 +115,7 @@ export class StudyView extends ItemView {
       } else if (evt.code === 'ArrowRight') {
         evt.preventDefault();
         this.nextCard();
-      } else if (this.plugin.settings.studyMode === 'srs') {
+      } else if (this.isTestMode()) {
         if (this.isFlipped) {
           if (evt.code === 'Digit1' || evt.code === 'Numpad1') {
             evt.preventDefault();
@@ -103,17 +131,8 @@ export class StudyView extends ItemView {
             this.handleSRSRating('easy');
           }
         }
-      } else {
-        if (evt.code === 'KeyR' || evt.code === 'Digit1') {
-          evt.preventDefault();
-          this.repeatLater();
-        } else if (evt.code === 'KeyK' || evt.code === 'Digit2') {
-          evt.preventDefault();
-          this.markKnown();
-        }
       }
     });
-
 
     this.resetSession();
   }
@@ -123,8 +142,12 @@ export class StudyView extends ItemView {
     this.contentEl.empty();
   }
 
+  private isTestMode(): boolean {
+    return this.plugin.settings.studyMode === 'test' || this.plugin.settings.studyMode === 'srs';
+  }
+
   /**
-   * Resets the session queue according to currently active filters.
+   * Resets the session queue according to currently active filters and scope.
    */
   public resetSession(keepIndex = false): void {
     let filtered = this.getFilteredCards();
@@ -145,12 +168,10 @@ export class StudyView extends ItemView {
     this.renderAll();
   }
 
-
   /**
    * Refreshes the view when plugin index is updated.
    */
   public onIndexUpdated(): void {
-    // Preserve current card if still present in filtered list
     const currentCardId = this.sessionQueue[this.currentIndex]?.id;
     const filtered = this.getFilteredCards();
     this.sessionQueue = [...filtered];
@@ -165,16 +186,29 @@ export class StudyView extends ItemView {
     this.renderAll();
   }
 
+  private cardMatchesScope(card: Flashcard): boolean {
+    if (!this.selectedScope) return true;
+    if (this.selectedScope.startsWith('folder:')) {
+      const folder = this.selectedScope.substring(7);
+      return card.filePath === folder || card.filePath.startsWith(`${folder}/`);
+    }
+    if (this.selectedScope.startsWith('file:')) {
+      const file = this.selectedScope.substring(5);
+      return card.filePath === file;
+    }
+    return true;
+  }
+
   private getFilteredCards(): Flashcard[] {
     const todayStr = new Date().toISOString().split('T')[0];
 
     const matching = this.plugin.cards.filter((card) => {
-      // File filter
-      if (this.selectedFile && card.filePath !== this.selectedFile) {
+      // Scope filter (folder or file)
+      if (!this.cardMatchesScope(card)) {
         return false;
       }
 
-      // Tag filter (must contain all selected tags)
+      // Tag filter
       if (this.selectedTags.size > 0) {
         for (const tag of this.selectedTags) {
           if (!card.tags.includes(tag)) {
@@ -183,8 +217,8 @@ export class StudyView extends ItemView {
         }
       }
 
-      // SRS Queue filter
-      if (this.plugin.settings.studyMode === 'srs') {
+      // Test / SRS Queue filter
+      if (this.isTestMode()) {
         const record = this.plugin.storage.getProgress(card.id);
         if (this.srsFilter === 'due' && !isCardDue(record, todayStr)) {
           return false;
@@ -197,8 +231,7 @@ export class StudyView extends ItemView {
       return true;
     });
 
-    if (this.plugin.settings.studyMode === 'srs' && this.srsFilter === 'all') {
-      // In SRS 'all' mode, prioritize due cards, then new cards (up to limits)
+    if (this.isTestMode() && this.srsFilter === 'all') {
       const dueCards = matching.filter((c) =>
         isCardDue(this.plugin.storage.getProgress(c.id), todayStr)
       );
@@ -214,23 +247,15 @@ export class StudyView extends ItemView {
       const maxDue = this.plugin.settings.maxDuePerSession || 50;
       const maxNew = this.plugin.settings.maxNewPerSession || 25;
 
-      const limitedDue = dueCards.slice(0, maxDue);
-      const limitedNew = newCards.slice(0, maxNew);
-
-      return [...limitedDue, ...limitedNew, ...otherCards];
+      return [...dueCards.slice(0, maxDue), ...newCards.slice(0, maxNew), ...otherCards];
     }
 
     return matching;
   }
 
-
   private getAllAvailableTags(): { tag: string; count: number }[] {
     const tagCounts = new Map<string, number>();
-
-    // Count tags only for cards matching the file filter (if any)
-    const baseCards = this.selectedFile
-      ? this.plugin.cards.filter((c) => c.filePath === this.selectedFile)
-      : this.plugin.cards;
+    const baseCards = this.plugin.cards.filter((c) => this.cardMatchesScope(c));
 
     for (const card of baseCards) {
       for (const tag of card.tags) {
@@ -243,12 +268,37 @@ export class StudyView extends ItemView {
       .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
   }
 
-  private getAllFiles(): string[] {
-    const files = new Set<string>();
+  private getAvailableScopes(): {
+    folders: { path: string; label: string; count: number }[];
+    files: { path: string; label: string; count: number }[];
+  } {
+    const folderCounts = new Map<string, number>();
+    const fileCounts = new Map<string, number>();
+
     for (const card of this.plugin.cards) {
-      files.add(card.filePath);
+      fileCounts.set(card.filePath, (fileCounts.get(card.filePath) || 0) + 1);
+
+      const parts = card.filePath.split('/');
+      let currentFolder = '';
+      for (let i = 0; i < parts.length - 1; i++) {
+        currentFolder = currentFolder ? `${currentFolder}/${parts[i]}` : parts[i];
+        folderCounts.set(currentFolder, (folderCounts.get(currentFolder) || 0) + 1);
+      }
     }
-    return Array.from(files).sort();
+
+    const folders = Array.from(folderCounts.entries())
+      .map(([path, count]) => ({ path, label: `📁 ${path}/`, count }))
+      .sort((a, b) => a.path.localeCompare(b.path));
+
+    const files = Array.from(fileCounts.entries())
+      .map(([path, count]) => ({
+        path,
+        label: `📄 ${path.split('/').pop() || path}`,
+        count,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    return { folders, files };
   }
 
   private renderAll(): void {
@@ -259,7 +309,7 @@ export class StudyView extends ItemView {
   }
 
   /**
-   * Renders the top toolbar with file filter, shuffle, stats, and warnings.
+   * Renders the top toolbar with Mode Switcher (Ботать / Проверить знания), Scope Selector, Shuffle, and Stats.
    */
   private renderToolbar(): void {
     this.toolbarEl.empty();
@@ -267,32 +317,72 @@ export class StudyView extends ItemView {
     const leftGroup = this.toolbarEl.createDiv({ cls: 'seelearn-toolbar-group left' });
     const rightGroup = this.toolbarEl.createDiv({ cls: 'seelearn-toolbar-group right' });
 
-    // File Selector Dropdown
-    const files = this.getAllFiles();
-    const fileSelect = leftGroup.createEl('select', { cls: 'dropdown seelearn-file-select' });
+    // 1. Study Mode Switcher: [ 📖 Ботать | 🎯 Проверить знания ]
+    const modeSwitch = leftGroup.createDiv({ cls: 'seelearn-mode-switch' });
+    const isTest = this.isTestMode();
 
-    const defaultOption = fileSelect.createEl('option', {
-      value: '',
-      text: `Все заметки (${this.plugin.cards.length} карт)`,
+    const learnBtn = modeSwitch.createEl('button', {
+      cls: `seelearn-mode-btn ${!isTest ? 'is-active' : ''}`,
+      text: '📖 Ботать',
+      title: 'Режим изучения: чтение и просмотр материала без оценок (по умолчанию)',
     });
-    if (!this.selectedFile) defaultOption.selected = true;
-
-    for (const file of files) {
-      const count = this.plugin.cards.filter((c) => c.filePath === file).length;
-      const opt = fileSelect.createEl('option', {
-        value: file,
-        text: `${file} (${count})`,
-      });
-      if (this.selectedFile === file) opt.selected = true;
-    }
-
-    fileSelect.addEventListener('change', () => {
-      this.selectedFile = fileSelect.value;
-      // Clear tag filters that might not exist in the selected file
+    learnBtn.addEventListener('click', async () => {
+      this.plugin.settings.studyMode = 'learn';
+      await this.plugin.saveSettings();
       this.resetSession();
     });
 
-    // Shuffle Button
+    const testBtn = modeSwitch.createEl('button', {
+      cls: `seelearn-mode-btn ${isTest ? 'is-active' : ''}`,
+      text: '🎯 Проверить знания',
+      title: 'Режим тестирования: интервальное повторение SM-2, оценки 1-4 и замер успехов',
+    });
+    testBtn.addEventListener('click', async () => {
+      this.plugin.settings.studyMode = 'test';
+      await this.plugin.saveSettings();
+      this.resetSession();
+    });
+
+    // 2. Scope Selector Dropdown (Folder / File)
+    const { folders, files } = this.getAvailableScopes();
+    const scopeSelect = leftGroup.createEl('select', { cls: 'dropdown seelearn-file-select' });
+
+    const defaultOption = scopeSelect.createEl('option', {
+      value: '',
+      text: `Все заметки (${this.plugin.cards.length} карт)`,
+    });
+    if (!this.selectedScope) defaultOption.selected = true;
+
+    if (folders.length > 0) {
+      const folderGroup = scopeSelect.createEl('optgroup');
+      folderGroup.label = 'Папки';
+      for (const f of folders) {
+        const opt = folderGroup.createEl('option', {
+          value: `folder:${f.path}`,
+          text: `${f.label} (${f.count})`,
+        });
+        if (this.selectedScope === `folder:${f.path}`) opt.selected = true;
+      }
+    }
+
+    if (files.length > 0) {
+      const fileGroup = scopeSelect.createEl('optgroup');
+      fileGroup.label = 'Заметки';
+      for (const f of files) {
+        const opt = fileGroup.createEl('option', {
+          value: `file:${f.path}`,
+          text: `${f.label} (${f.count})`,
+        });
+        if (this.selectedScope === `file:${f.path}`) opt.selected = true;
+      }
+    }
+
+    scopeSelect.addEventListener('change', () => {
+      this.selectedScope = scopeSelect.value;
+      this.resetSession();
+    });
+
+    // 3. Shuffle Button
     const shuffleBtn = leftGroup.createEl('button', {
       cls: 'clickable-icon seelearn-btn-icon',
       title: 'Перемешать колоду',
@@ -302,7 +392,7 @@ export class StudyView extends ItemView {
       this.shuffleQueue();
     });
 
-    // Refresh Button
+    // 4. Refresh Button
     const refreshBtn = leftGroup.createEl('button', {
       cls: 'clickable-icon seelearn-btn-icon',
       title: 'Переиндексировать хранилище',
@@ -313,15 +403,16 @@ export class StudyView extends ItemView {
       await this.plugin.reloadAllCards();
     });
 
-    // SRS Queue Filter Pills (All / Due / New)
-    if (this.plugin.settings.studyMode === 'srs') {
-      const breakdown = this.plugin.storage.getSRSBreakdown(this.plugin.cards);
+    // 5. Scoped SRS Queue Filter Pills (reflects ONLY cards in selected scope!)
+    if (isTest) {
+      const scopedCards = this.plugin.cards.filter((c) => this.cardMatchesScope(c));
+      const breakdown = this.plugin.storage.getSRSBreakdown(scopedCards);
       const srsGroup = this.toolbarEl.createDiv({ cls: 'seelearn-srs-filter-group' });
 
       const allPill = srsGroup.createEl('button', {
         cls: `seelearn-srs-pill ${this.srsFilter === 'all' ? 'is-active' : ''}`,
         text: `Все (${breakdown.total})`,
-        title: 'Показать все карточки',
+        title: 'Показать все карточки в выбранной области',
       });
       allPill.addEventListener('click', () => {
         this.srsFilter = 'all';
@@ -331,7 +422,7 @@ export class StudyView extends ItemView {
       const duePill = srsGroup.createEl('button', {
         cls: `seelearn-srs-pill seelearn-pill-due ${this.srsFilter === 'due' ? 'is-active' : ''}`,
         text: `К повторению (${breakdown.due})`,
-        title: 'Карточки, запланированные на сегодня по алгоритму SM-2',
+        title: 'Карточки, запланированные на сегодня в этой папке/странице',
       });
       duePill.addEventListener('click', () => {
         this.srsFilter = 'due';
@@ -341,7 +432,7 @@ export class StudyView extends ItemView {
       const newPill = srsGroup.createEl('button', {
         cls: `seelearn-srs-pill seelearn-pill-new ${this.srsFilter === 'new' ? 'is-active' : ''}`,
         text: `Новые (${breakdown.newCards})`,
-        title: 'Еще не изученные карточки',
+        title: 'Еще не изученные карточки в этой папке/странице',
       });
       newPill.addEventListener('click', () => {
         this.srsFilter = 'new';
@@ -349,8 +440,7 @@ export class StudyView extends ItemView {
       });
     }
 
-    // Validation warnings badge (if any)
-
+    // 6. Validation warnings badge (if any)
     if (this.plugin.warnings.length > 0) {
       const warnBadge = rightGroup.createEl('button', {
         cls: 'seelearn-badge seelearn-badge-warning',
@@ -362,7 +452,7 @@ export class StudyView extends ItemView {
       });
     }
 
-    // Card Counter
+    // 7. Card Counter
     const total = this.sessionQueue.length;
     const current = total > 0 ? this.currentIndex + 1 : 0;
     rightGroup.createDiv({
@@ -372,7 +462,7 @@ export class StudyView extends ItemView {
   }
 
   /**
-   * Renders tag chips for filtering.
+   * Renders tag chips with search input when count > 6.
    */
   private renderTagsBar(): void {
     this.tagsBarEl.empty();
@@ -384,8 +474,43 @@ export class StudyView extends ItemView {
     }
     this.tagsBarEl.style.display = 'flex';
 
+    // Render search input if tags count > 6
+    if (tags.length > 6) {
+      const searchBox = this.tagsBarEl.createDiv({ cls: 'seelearn-tag-search-box' });
+      setIcon(searchBox.createSpan({ cls: 'seelearn-tag-search-icon' }), 'search');
+      const searchInput = searchBox.createEl('input', {
+        type: 'text',
+        cls: 'seelearn-tag-search-input',
+        placeholder: 'Поиск темы...',
+        value: this.tagSearchQuery,
+      });
+
+      searchInput.addEventListener('input', () => {
+        this.tagSearchQuery = searchInput.value;
+        this.renderTagChipsList(chipsContainer, tags);
+      });
+
+      if (this.tagSearchQuery) {
+        const clearBtn = searchBox.createSpan({ cls: 'seelearn-tag-search-clear', text: '×' });
+        clearBtn.addEventListener('click', () => {
+          this.tagSearchQuery = '';
+          this.renderTagsBar();
+        });
+      }
+    }
+
+    const chipsContainer = this.tagsBarEl.createDiv({ cls: 'seelearn-tags-chips-container' });
+    this.renderTagChipsList(chipsContainer, tags);
+  }
+
+  private renderTagChipsList(
+    container: HTMLElement,
+    tags: { tag: string; count: number }[]
+  ): void {
+    container.empty();
+
     // "All" chip
-    const allChip = this.tagsBarEl.createEl('button', {
+    const allChip = container.createEl('button', {
       cls: `seelearn-tag-chip ${this.selectedTags.size === 0 ? 'is-active' : ''}`,
       text: 'Все темы',
     });
@@ -394,10 +519,13 @@ export class StudyView extends ItemView {
       this.resetSession();
     });
 
-    // Individual tag chips
-    for (const { tag, count } of tags) {
+    const filteredTags = this.tagSearchQuery
+      ? tags.filter((t) => t.tag.toLowerCase().includes(this.tagSearchQuery.toLowerCase()))
+      : tags;
+
+    for (const { tag, count } of filteredTags) {
       const isActive = this.selectedTags.has(tag);
-      const chip = this.tagsBarEl.createEl('button', {
+      const chip = container.createEl('button', {
         cls: `seelearn-tag-chip ${isActive ? 'is-active' : ''}`,
       });
       chip.createSpan({ text: `#${tag}` });
@@ -412,10 +540,17 @@ export class StudyView extends ItemView {
         this.resetSession();
       });
     }
+
+    if (filteredTags.length === 0 && this.tagSearchQuery) {
+      container.createSpan({
+        cls: 'seelearn-tags-empty-hint',
+        text: 'Тема не найдена',
+      });
+    }
   }
 
   /**
-   * Renders the card container, header, front/back markdown content.
+   * Renders the card container, header, progress track, and markdown content.
    */
   private async renderCardArea(): Promise<void> {
     this.cleanupCardComponent();
@@ -433,34 +568,59 @@ export class StudyView extends ItemView {
     }
 
     const cardContainer = this.cardAreaEl.createDiv({ cls: 'seelearn-card-container' });
+    if (this.plugin.settings.enable3DFlip) {
+      cardContainer.addClass('seelearn-enable-3d');
+    }
+    if (this.isFlipped) {
+      cardContainer.addClass('is-flipped');
+    }
+
+    // Progress Bar Track at top of card
+    const progressTrack = cardContainer.createDiv({ cls: 'seelearn-progress-track' });
+    const percent = Math.min(
+      100,
+      Math.round(((this.currentIndex + 1) / this.sessionQueue.length) * 100)
+    );
+    const progressFill = progressTrack.createDiv({ cls: 'seelearn-progress-fill' });
+    progressFill.style.width = `${percent}%`;
 
     // Card Header (Tags, File, Jump to Note button)
     const cardHeader = cardContainer.createDiv({ cls: 'seelearn-card-header' });
 
     const headerLeft = cardHeader.createDiv({ cls: 'seelearn-header-left' });
 
-    // Progress badge from data.json
+    // Progress badge / Card kind pill
     const progress = this.plugin.storage.getProgress(card.id);
     const progressPill = headerLeft.createSpan({ cls: 'seelearn-progress-pill' });
-    if (progress && progress.repetitions > 0) {
-      progressPill.setText(`Повтор #${progress.repetitions} (${progress.interval} дн.)`);
-      progressPill.addClass('is-learned');
-      progressPill.setAttribute(
-        'title',
-        `Фактор легкости: ${progress.easeFactor.toFixed(2)}, Забываний: ${progress.lapses}`
-      );
+
+    if (!card.hasBack) {
+      progressPill.setText('ИНФО');
+      progressPill.addClass('is-info');
+      progressPill.setAttribute('title', 'Односторонняя карточка для изучения информации');
+    } else if (this.isTestMode()) {
+      if (progress && progress.repetitions > 0) {
+        progressPill.setText(`Интервал: ${progress.interval} дн.`);
+        progressPill.addClass('is-learned');
+        progressPill.setAttribute(
+          'title',
+          `Повторений: ${progress.repetitions}, Фактор легкости: ${progress.easeFactor}, Забываний: ${progress.lapses}`
+        );
+      } else {
+        progressPill.setText('Новая карта');
+        progressPill.addClass('is-new');
+      }
     } else {
-      progressPill.setText('Новая карта');
-      progressPill.addClass('is-new');
+      progressPill.setText('КАРТОЧКА');
+      progressPill.addClass('is-learn');
     }
 
+    // Tags list container with overflow scroll
     if (card.tags.length > 0) {
       const tagsContainer = headerLeft.createDiv({ cls: 'seelearn-card-tags' });
       for (const tag of card.tags) {
         tagsContainer.createSpan({ cls: 'seelearn-card-tag-pill', text: `#${tag}` });
       }
     }
-
 
     const headerRight = cardHeader.createDiv({ cls: 'seelearn-header-right' });
 
@@ -490,8 +650,8 @@ export class StudyView extends ItemView {
     this.addChild(this.activeCardComponent);
     this.activeCardComponent.load();
 
-    if (!this.isFlipped) {
-      // STATE 1: Question (@front)
+    if (!card.hasBack) {
+      // FRONT-ONLY INFO CARD
       const frontEl = cardBody.createDiv({ cls: 'seelearn-content seelearn-front' });
       await MarkdownRenderer.render(
         this.app,
@@ -501,17 +661,32 @@ export class StudyView extends ItemView {
         this.activeCardComponent
       );
 
-      // Prompt overlay / button
       const promptEl = cardBody.createDiv({ cls: 'seelearn-flip-prompt' });
-      promptEl.createSpan({ text: 'Нажмите пробел или карточку, чтобы посмотреть ответ' });
+      promptEl.createSpan({ text: 'Нажмите Пробел или кнопку «Далее» для продолжения' });
+
+      cardBody.addEventListener('click', () => {
+        this.nextCard();
+      });
+    } else if (!this.isFlipped) {
+      // TWO-SIDED CARD: Question (@front)
+      const frontEl = cardBody.createDiv({ cls: 'seelearn-content seelearn-front' });
+      await MarkdownRenderer.render(
+        this.app,
+        card.front,
+        frontEl,
+        card.filePath,
+        this.activeCardComponent
+      );
+
+      const promptEl = cardBody.createDiv({ cls: 'seelearn-flip-prompt' });
+      promptEl.createSpan({ text: 'Нажмите Пробел или карточку, чтобы посмотреть ответ' });
 
       cardBody.addEventListener('click', () => {
         this.flipCard();
       });
     } else {
-      // STATE 2: Answer (@back)
+      // TWO-SIDED CARD: Answer (@back)
       if (this.plugin.settings.revealMode === 'append') {
-        // Mode A: Front + Divider + Back
         const frontEl = cardBody.createDiv({
           cls: 'seelearn-content seelearn-front seelearn-faded',
         });
@@ -535,7 +710,6 @@ export class StudyView extends ItemView {
           this.activeCardComponent
         );
       } else {
-        // Mode B: Replace with Back only
         const backEl = cardBody.createDiv({ cls: 'seelearn-content seelearn-back' });
         await MarkdownRenderer.render(
           this.app,
@@ -549,7 +723,7 @@ export class StudyView extends ItemView {
   }
 
   /**
-   * Renders empty or completed state when no cards are available.
+   * Renders empty or completed state with session summary dashboard.
    */
   private renderEmptyState(): void {
     const emptyBox = this.cardAreaEl.createDiv({ cls: 'seelearn-empty-box' });
@@ -558,7 +732,7 @@ export class StudyView extends ItemView {
       setIcon(emptyBox.createDiv({ cls: 'seelearn-empty-icon' }), 'inbox');
       emptyBox.createEl('h3', { text: 'Карточки не найдены' });
       emptyBox.createEl('p', {
-        text: `Убедитесь, что в заметках указано свойство ${this.plugin.settings.triggerProperty}: ${this.plugin.settings.triggerValue} и используется разметка %% @card %% ... %% @end %%.`,
+        text: `Убедитесь, что в свойствах заметок указано ${this.plugin.settings.triggerProperty}: ${this.plugin.settings.triggerValue} и используется разметка %% @card %% ... %% @end %%.`,
       });
 
       const helpCode = emptyBox.createEl('pre', { cls: 'seelearn-sample-code' });
@@ -567,35 +741,82 @@ export class StudyView extends ItemView {
 tags:
   - seelearn
 topics:
-  - JavaScript
+  - Разработка
 ---
 
-%% @card #basics %%
+%% @card #frontend %%
 %% @front %%
-Что такое замыкание (closure)?
+Что такое Virtual DOM?
 %% @back %%
-Функция вместе со своим лексическим окружением.
+Легковесная копия реального DOM для оптимизации рендеринга.
 %% @end %%`,
       });
     } else {
-      setIcon(emptyBox.createDiv({ cls: 'seelearn-empty-icon' }), 'check-circle');
-      emptyBox.createEl('h3', { text: '🎉 Сессия завершена!' });
+      // SESSION SUMMARY DASHBOARD
+      setIcon(emptyBox.createDiv({ cls: 'seelearn-empty-icon seelearn-icon-celebrate' }), 'award');
+      emptyBox.createEl('h2', { text: '🎉 Сессия завершена!' });
       emptyBox.createEl('p', {
-        text: 'Вы повторили все карточки в этой выборке.',
+        text: this.isTestMode()
+          ? 'Вы повторили запланированные карточки по графику интервального повторения.'
+          : 'Вы изучили все карточки в выбранной области.',
       });
 
-      const restartBtn = emptyBox.createEl('button', {
+      const statsGrid = emptyBox.createDiv({ cls: 'seelearn-stats-grid' });
+
+      const item1 = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
+      item1.createDiv({ cls: 'seelearn-stat-val', text: `${this.sessionStats.totalReviewed}` });
+      item1.createDiv({ cls: 'seelearn-stat-lbl', text: 'Пройдено карточек' });
+
+      if (this.isTestMode()) {
+        const successes = this.sessionStats.goodCount + this.sessionStats.easyCount;
+        const totalAnswers = successes + this.sessionStats.hardCount + this.sessionStats.againCount;
+        const successRate = totalAnswers > 0 ? Math.round((successes / totalAnswers) * 100) : 100;
+
+        const item2 = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
+        item2.createDiv({ cls: 'seelearn-stat-val', text: `${successRate}%` });
+        item2.createDiv({ cls: 'seelearn-stat-lbl', text: 'Успешность (Good/Easy)' });
+
+        const item3 = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
+        item3.createDiv({ cls: 'seelearn-stat-val', text: `${this.sessionStats.againCount}` });
+        item3.createDiv({ cls: 'seelearn-stat-lbl', text: 'Забываний (Снова)' });
+      }
+
+      const actionsRow = emptyBox.createDiv({ cls: 'seelearn-summary-actions' });
+
+      const restartBtn = actionsRow.createEl('button', {
         cls: 'mod-cta',
-        text: 'Повторить снова',
+        text: 'Повторить сессию снова',
       });
       restartBtn.addEventListener('click', () => {
+        this.sessionStats = {
+          totalReviewed: 0,
+          againCount: 0,
+          hardCount: 0,
+          goodCount: 0,
+          easyCount: 0,
+          failedCards: [],
+        };
         this.resetSession();
       });
+
+      if (this.sessionStats.failedCards.length > 0) {
+        const repeatFailedBtn = actionsRow.createEl('button', {
+          cls: 'seelearn-nav-btn seelearn-btn-repeat',
+          text: `Повторить с ошибками (${this.sessionStats.failedCards.length})`,
+        });
+        repeatFailedBtn.addEventListener('click', () => {
+          this.sessionQueue = [...this.sessionStats.failedCards];
+          this.sessionStats.failedCards = [];
+          this.currentIndex = 0;
+          this.isFlipped = false;
+          this.renderAll();
+        });
+      }
     }
   }
 
   /**
-   * Renders the bottom navigation bar with Back, Flip, Next, Know, Repeat later buttons.
+   * Renders the bottom navigation bar with Learn Mode navigation, SRS ratings, and Undo button.
    */
   private renderNavBar(): void {
     this.navBarEl.empty();
@@ -603,23 +824,54 @@ topics:
     const hasCards = this.sessionQueue.length > 0;
     const isFirst = this.currentIndex === 0;
     const isLast = this.currentIndex >= this.sessionQueue.length - 1;
+    const currentCard = this.sessionQueue[this.currentIndex];
 
     const leftNav = this.navBarEl.createDiv({ cls: 'seelearn-nav-group left' });
     const centerNav = this.navBarEl.createDiv({ cls: 'seelearn-nav-group center' });
     const rightNav = this.navBarEl.createDiv({ cls: 'seelearn-nav-group right' });
 
-    // Check study mode
-    if (this.plugin.settings.studyMode === 'srs') {
-      if (!this.isFlipped) {
-        // STATE 1 (Question): Standard navigation
-        const prevBtn = leftNav.createEl('button', {
-          cls: 'seelearn-nav-btn',
-          text: '← Назад',
-          title: 'Предыдущая карточка (ArrowLeft)',
-        });
-        prevBtn.disabled = !hasCards || isFirst;
-        prevBtn.addEventListener('click', () => this.prevCard());
+    // Left Navigation: Previous Card
+    const prevBtn = leftNav.createEl('button', {
+      cls: 'seelearn-nav-btn',
+      text: '← Назад',
+      title: 'Предыдущая карточка (ArrowLeft)',
+    });
+    prevBtn.disabled = !hasCards || isFirst;
+    prevBtn.addEventListener('click', () => this.prevCard());
 
+    // Center Controls: Dependent on Mode and Card Type
+    if (!this.isTestMode()) {
+      // LEARN MODE (Режим "Ботать" по умолчанию)
+      if (currentCard?.hasBack) {
+        const flipText = !this.isFlipped ? 'Показать ответ (Space)' : 'Скрыть ответ (Space)';
+        const flipBtn = centerNav.createEl('button', {
+          cls: 'seelearn-nav-btn mod-cta',
+          text: flipText,
+          title: 'Перевернуть карточку (Space)',
+        });
+        flipBtn.disabled = !hasCards;
+        flipBtn.addEventListener('click', () => this.flipCard());
+      }
+
+      const nextBtn = centerNav.createEl('button', {
+        cls: 'seelearn-nav-btn',
+        text: 'Далее →',
+        title: 'Следующая карточка (ArrowRight / Space)',
+      });
+      nextBtn.disabled = !hasCards || isLast;
+      nextBtn.addEventListener('click', () => this.nextCard());
+    } else {
+      // TEST MODE (Режим "Проверить знания" с SM-2)
+      if (!currentCard?.hasBack) {
+        // Front-only info card in test mode
+        const readBtn = centerNav.createEl('button', {
+          cls: 'seelearn-nav-btn mod-cta',
+          text: 'Понятно / Изучено ✓ (Space)',
+        });
+        readBtn.disabled = !hasCards;
+        readBtn.addEventListener('click', () => this.handleSRSRating('good'));
+      } else if (!this.isFlipped) {
+        // Front of two-sided card in test mode
         const flipBtn = centerNav.createEl('button', {
           cls: 'seelearn-nav-btn mod-cta',
           text: 'Показать ответ (Space)',
@@ -636,8 +888,7 @@ topics:
         nextBtn.disabled = !hasCards || isLast;
         nextBtn.addEventListener('click', () => this.nextCard());
       } else {
-        // STATE 2 (Answer): 4 SRS Rating Buttons with predicted intervals
-        const currentCard = this.sessionQueue[this.currentIndex];
+        // Back of two-sided card: 4 SRS Rating Buttons with predicted intervals
         const record = currentCard ? this.plugin.storage.getProgress(currentCard.id) : undefined;
         const previews = getSRSIntervalPreviews(record);
 
@@ -677,56 +928,104 @@ topics:
         easyBtn.createSpan({ cls: 'seelearn-srs-badge', text: previews.easy });
         easyBtn.addEventListener('click', () => this.handleSRSRating('easy'));
       }
+    }
+
+    // Right Controls: Undo Button
+    const undoBtn = rightNav.createEl('button', {
+      cls: 'seelearn-nav-btn seelearn-btn-undo',
+      text: '↶ Отмена',
+      title: 'Отменить последнее действие (Ctrl+Z / Cmd+Z)',
+    });
+    undoBtn.disabled = this.historyStack.length === 0;
+    undoBtn.addEventListener('click', () => this.undoLastAction());
+  }
+
+  // --- ACTIONS ---
+
+  private handleSpace(): void {
+    if (this.sessionQueue.length === 0) return;
+    const currentCard = this.sessionQueue[this.currentIndex];
+
+    if (!currentCard?.hasBack) {
+      // Front-only card: Space advances
+      if (this.isTestMode()) {
+        this.handleSRSRating('good');
+      } else {
+        this.nextCard();
+      }
+    } else if (!this.isFlipped) {
+      this.flipCard();
     } else {
-      // Cram Mode (Casual review)
-      const prevBtn = leftNav.createEl('button', {
-        cls: 'seelearn-nav-btn',
-        text: '← Назад',
-        title: 'Предыдущая карточка (ArrowLeft)',
-      });
-      prevBtn.disabled = !hasCards || isFirst;
-      prevBtn.addEventListener('click', () => this.prevCard());
+      if (this.isTestMode()) {
+        this.handleSRSRating('good');
+      } else {
+        if (this.currentIndex < this.sessionQueue.length - 1) {
+          this.nextCard();
+        } else {
+          this.flipCard();
+        }
+      }
+    }
+  }
 
-      const flipText = !this.isFlipped ? 'Показать ответ' : 'Скрыть ответ';
-      const flipBtn = centerNav.createEl('button', {
-        cls: 'seelearn-nav-btn mod-cta',
-        text: `${flipText} (Space)`,
-        title: 'Перевернуть карточку (Space)',
-      });
-      flipBtn.disabled = !hasCards;
-      flipBtn.addEventListener('click', () => this.flipCard());
+  private flipCard(): void {
+    if (this.sessionQueue.length === 0) return;
+    const currentCard = this.sessionQueue[this.currentIndex];
+    if (!currentCard?.hasBack) return; // Cannot flip front-only card
 
-      const nextBtn = centerNav.createEl('button', {
-        cls: 'seelearn-nav-btn',
-        text: 'Далее →',
-        title: 'Следующая карточка (ArrowRight)',
-      });
-      nextBtn.disabled = !hasCards || isLast;
-      nextBtn.addEventListener('click', () => this.nextCard());
+    this.isFlipped = !this.isFlipped;
+    this.renderCardArea();
+    this.renderNavBar();
+  }
 
-      const repeatBtn = rightNav.createEl('button', {
-        cls: 'seelearn-nav-btn seelearn-btn-repeat',
-        text: 'Повторить позже',
-        title: 'Переместить карту в конец очереди (клавиша 1 / R)',
-      });
-      repeatBtn.disabled = !hasCards;
-      repeatBtn.addEventListener('click', () => this.repeatLater());
+  private nextCard(): void {
+    if (this.currentIndex < this.sessionQueue.length - 1) {
+      this.pushHistoryState();
+      this.currentIndex++;
+      this.isFlipped = false;
+      this.sessionStats.totalReviewed++;
+      this.renderToolbar();
+      this.renderCardArea();
+      this.renderNavBar();
+    } else if (this.currentIndex === this.sessionQueue.length - 1) {
+      // Finished all cards
+      this.sessionStats.totalReviewed++;
+      this.sessionQueue = [];
+      this.renderAll();
+    }
+  }
 
-      const knowBtn = rightNav.createEl('button', {
-        cls: 'seelearn-nav-btn seelearn-btn-know',
-        text: 'Знаю ✓',
-        title: 'Убрать карту из текущей сессии (клавиша 2 / K)',
-      });
-      knowBtn.disabled = !hasCards;
-      knowBtn.addEventListener('click', () => this.markKnown());
+  private prevCard(): void {
+    if (this.currentIndex > 0) {
+      this.pushHistoryState();
+      this.currentIndex--;
+      this.isFlipped = false;
+      this.renderToolbar();
+      this.renderCardArea();
+      this.renderNavBar();
     }
   }
 
   private handleSRSRating(rating: SRSRating): void {
     if (this.sessionQueue.length === 0) return;
 
+    this.pushHistoryState();
     const card = this.sessionQueue[this.currentIndex];
     const result = this.plugin.storage.recordReview(card.id, rating);
+
+    this.sessionStats.totalReviewed++;
+    if (rating === 'again') {
+      this.sessionStats.againCount++;
+      if (!this.sessionStats.failedCards.some((c) => c.id === card.id)) {
+        this.sessionStats.failedCards.push(card);
+      }
+    } else if (rating === 'hard') {
+      this.sessionStats.hardCount++;
+    } else if (rating === 'good') {
+      this.sessionStats.goodCount++;
+    } else if (rating === 'easy') {
+      this.sessionStats.easyCount++;
+    }
 
     const labels: Record<SRSRating, string> = {
       again: 'Снова (<1д)',
@@ -738,13 +1037,11 @@ topics:
     new Notice(`${labels[rating]} — интервал обновлен`);
 
     if (rating === 'again') {
-      // Requeue card in the same session after requeueStep cards
       this.sessionQueue.splice(this.currentIndex, 1);
       const step = Math.max(1, this.plugin.settings.requeueStep || 3);
       const insertAt = Math.min(this.sessionQueue.length, this.currentIndex + step);
       this.sessionQueue.splice(insertAt, 0, card);
     } else {
-      // Completed for today, remove from session queue
       this.sessionQueue.splice(this.currentIndex, 1);
     }
 
@@ -756,92 +1053,42 @@ topics:
     this.renderAll();
   }
 
+  private pushHistoryState(): void {
+    const card = this.sessionQueue[this.currentIndex];
+    if (!card) return;
 
-  // --- ACTIONS ---
+    this.historyStack.push({
+      cardId: card.id,
+      queueSnapshot: [...this.sessionQueue],
+      currentIndex: this.currentIndex,
+      isFlipped: this.isFlipped,
+      previousProgressRecord: this.plugin.storage.getProgress(card.id)
+        ? JSON.parse(JSON.stringify(this.plugin.storage.getProgress(card.id)))
+        : undefined,
+    });
 
-  private handleSpace(): void {
-    if (this.sessionQueue.length === 0) return;
-    if (!this.isFlipped) {
-      this.flipCard();
+    if (this.historyStack.length > 25) {
+      this.historyStack.shift();
+    }
+  }
+
+  private undoLastAction(): void {
+    if (this.historyStack.length === 0) return;
+
+    const last = this.historyStack.pop()!;
+    this.sessionQueue = last.queueSnapshot;
+    this.currentIndex = last.currentIndex;
+    this.isFlipped = last.isFlipped;
+
+    if (last.previousProgressRecord) {
+      this.plugin.storage.data.progress[last.cardId] = last.previousProgressRecord;
+      this.plugin.storage.scheduleSave();
     } else {
-      if (this.currentIndex < this.sessionQueue.length - 1) {
-        this.nextCard();
-      } else {
-        this.flipCard();
-      }
-    }
-  }
-
-  private flipCard(): void {
-    if (this.sessionQueue.length === 0) return;
-    this.isFlipped = !this.isFlipped;
-    this.renderCardArea();
-    this.renderNavBar();
-  }
-
-  private nextCard(): void {
-    if (this.currentIndex < this.sessionQueue.length - 1) {
-      this.currentIndex++;
-      this.isFlipped = false;
-      this.renderToolbar();
-      this.renderCardArea();
-      this.renderNavBar();
-    }
-  }
-
-  private prevCard(): void {
-    if (this.currentIndex > 0) {
-      this.currentIndex--;
-      this.isFlipped = false;
-      this.renderToolbar();
-      this.renderCardArea();
-      this.renderNavBar();
-    }
-  }
-
-  private repeatLater(): void {
-    if (this.sessionQueue.length === 0) return;
-
-    const card = this.sessionQueue[this.currentIndex];
-
-    // Record review in storage
-    this.plugin.storage.recordReview(card.id, 'repeat');
-
-    // Remove current card from queue
-    this.sessionQueue.splice(this.currentIndex, 1);
-
-    // Re-insert card after requeueStep cards or at the end
-    const step = Math.max(1, this.plugin.settings.requeueStep || 3);
-    const insertAt = Math.min(this.sessionQueue.length, this.currentIndex + step);
-    this.sessionQueue.splice(insertAt, 0, card);
-
-    if (this.currentIndex >= this.sessionQueue.length) {
-      this.currentIndex = Math.max(0, this.sessionQueue.length - 1);
+      delete this.plugin.storage.data.progress[last.cardId];
+      this.plugin.storage.scheduleSave();
     }
 
-    this.isFlipped = false;
-    const delta = insertAt - this.currentIndex;
-    new Notice(`Карточка отложена (появится через ${delta} ${delta === 1 ? 'карту' : 'карты'})`);
-    this.renderAll();
-  }
-
-  private markKnown(): void {
-    if (this.sessionQueue.length === 0) return;
-
-    const card = this.sessionQueue[this.currentIndex];
-
-    // Record review in storage
-    const record = this.plugin.storage.recordReview(card.id, 'know');
-
-    // Remove card from current session
-    this.sessionQueue.splice(this.currentIndex, 1);
-
-    if (this.currentIndex >= this.sessionQueue.length) {
-      this.currentIndex = Math.max(0, this.sessionQueue.length - 1);
-    }
-
-    this.isFlipped = false;
-    new Notice(`Карточка освоена! (Интервал: ${record.interval} дн.)`);
+    new Notice('Действие отменено (Undo)');
     this.renderAll();
   }
 
@@ -862,7 +1109,6 @@ topics:
     this.renderAll();
   }
 
-
   private async openCardInNote(card: Flashcard): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(card.filePath);
     if (file instanceof TFile) {
@@ -881,7 +1127,6 @@ topics:
       new Notice(`Файл не найден: ${card.filePath}`);
     }
   }
-
 
   private cleanupCardComponent(): void {
     if (this.activeCardComponent) {

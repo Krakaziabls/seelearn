@@ -25,6 +25,7 @@ test('interleaveCards distributes cards across topics', () => {
     tags: [tag],
     globalTopics: [tag],
     localTags: [tag],
+    hasBack: true,
   });
 
   const cards: Flashcard[] = [
