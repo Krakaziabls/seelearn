@@ -1,8 +1,11 @@
 export type RevealMode = 'replace' | 'append';
+export type StudyMode = 'srs' | 'cram';
+export type SRSQueueFilter = 'all' | 'due' | 'new';
+export type SRSRatingValue = 'again' | 'hard' | 'good' | 'easy' | 'know' | 'repeat' | number;
 
 export interface CardReviewEntry {
   date: string;
-  rating: 'know' | 'repeat' | number;
+  rating: SRSRatingValue;
 }
 
 export interface CardProgressRecord {
@@ -21,10 +24,14 @@ export interface SeeLearnSettings {
   triggerValue: string;
   topicProperty: string;
   revealMode: RevealMode;
+  studyMode: StudyMode;
+  srsFilter: SRSQueueFilter;
   autoFlipOnSpace: boolean;
   shuffleOnStart: boolean;
   interleaveTopics: boolean;
   requeueStep: number;
+  maxNewPerSession: number;
+  maxDuePerSession: number;
 }
 
 export const DEFAULT_SETTINGS: SeeLearnSettings = {
@@ -32,11 +39,16 @@ export const DEFAULT_SETTINGS: SeeLearnSettings = {
   triggerValue: 'seelearn',
   topicProperty: 'topics',
   revealMode: 'append',
+  studyMode: 'srs',
+  srsFilter: 'all',
   autoFlipOnSpace: true,
   shuffleOnStart: false,
   interleaveTopics: true,
   requeueStep: 3,
+  maxNewPerSession: 25,
+  maxDuePerSession: 50,
 };
+
 
 export interface SeeLearnStorageData {
   version: number;

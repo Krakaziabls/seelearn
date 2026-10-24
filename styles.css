@@ -449,6 +449,113 @@
 }
 
 /* --------------------------------------------------------------------------
+   SRS Rating Buttons (Again, Hard, Good, Easy)
+   -------------------------------------------------------------------------- */
+.seelearn-btn-srs {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 82px;
+  padding: 4px 12px;
+  line-height: 1.25;
+}
+
+.seelearn-srs-title {
+  font-weight: 600;
+  font-size: 0.88em;
+}
+
+.seelearn-srs-badge {
+  font-size: 0.74em;
+  opacity: 0.8;
+  font-weight: 500;
+}
+
+.seelearn-btn-again {
+  border: 1px solid var(--color-red, #ef4444) !important;
+  color: var(--color-red, #ef4444) !important;
+  background: transparent;
+}
+
+.seelearn-btn-again:hover:not(:disabled) {
+  background-color: var(--color-red, #ef4444) !important;
+  color: #ffffff !important;
+}
+
+.seelearn-btn-hard {
+  border: 1px solid var(--color-orange, #f59e0b) !important;
+  color: var(--color-orange, #f59e0b) !important;
+  background: transparent;
+}
+
+.seelearn-btn-hard:hover:not(:disabled) {
+  background-color: var(--color-orange, #f59e0b) !important;
+  color: #ffffff !important;
+}
+
+.seelearn-btn-good {
+  border: 1px solid var(--interactive-accent) !important;
+  color: var(--interactive-accent) !important;
+  background: transparent;
+}
+
+.seelearn-btn-good:hover:not(:disabled) {
+  background-color: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
+}
+
+.seelearn-btn-easy {
+  border: 1px solid var(--color-green, #10b981) !important;
+  color: var(--color-green, #10b981) !important;
+  background: transparent;
+}
+
+.seelearn-btn-easy:hover:not(:disabled) {
+  background-color: var(--color-green, #10b981) !important;
+  color: #ffffff !important;
+}
+
+/* SRS Queue Filter Pills in Toolbar */
+.seelearn-srs-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.seelearn-srs-pill {
+  font-size: 0.8em;
+  padding: 3px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--background-modifier-border);
+  background-color: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.seelearn-srs-pill:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+.seelearn-srs-pill.is-active {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+  font-weight: 600;
+}
+
+.seelearn-srs-pill.seelearn-pill-due {
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.seelearn-srs-pill.seelearn-pill-new {
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+
+/* --------------------------------------------------------------------------
    Validation Warnings Modal
    -------------------------------------------------------------------------- */
 .seelearn-warnings-list {

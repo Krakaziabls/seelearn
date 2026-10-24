@@ -59,6 +59,21 @@ export class SeeLearnSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName('Режим обучения (Study Mode)')
+      .setDesc('Выберите механику обучения: умное интервальное повторение (SM-2) или свободное повторение всех карточек (Cram Mode).')
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption('srs', 'Интервальное повторение SM-2 (4 оценки: Снова, Трудно, Хорошо, Легко)')
+          .addOption('cram', 'Свободная зубрежка (Cram Mode: Повторить позже / Знаю)')
+          .setValue(this.plugin.settings.studyMode)
+          .onChange(async (value: string) => {
+            this.plugin.settings.studyMode = value as any;
+            await this.plugin.saveSettings();
+            this.plugin.reloadAllCards();
+          })
+      );
+
+    new Setting(containerEl)
       .setName('Режим показа ответа (Reveal Mode)')
       .setDesc('Выберите, как отображать оборотную сторону карточки (@back).')
       .addDropdown((dropdown) =>
@@ -84,7 +99,36 @@ export class SeeLearnSettingTab extends PluginSettingTab {
           })
       );
 
-    containerEl.createEl('h3', { text: 'Управление сессией и тасование' });
+    containerEl.createEl('h3', { text: 'Управление сессией и алгоритмы SRS' });
+
+    new Setting(containerEl)
+      .setName('Лимит новых карт за сессию')
+      .setDesc('Максимальное количество новых карточек для включения в одну учебную сессию.')
+      .addText((text) =>
+        text
+          .setPlaceholder('25')
+          .setValue(String(this.plugin.settings.maxNewPerSession || 25))
+          .onChange(async (val) => {
+            const parsed = parseInt(val, 10);
+            this.plugin.settings.maxNewPerSession = !isNaN(parsed) && parsed > 0 ? parsed : 25;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Лимит карт к повторению (Due) за сессию')
+      .setDesc('Максимальное количество созревших для повторения карточек за одну сессию.')
+      .addText((text) =>
+        text
+          .setPlaceholder('50')
+          .setValue(String(this.plugin.settings.maxDuePerSession || 50))
+          .onChange(async (val) => {
+            const parsed = parseInt(val, 10);
+            this.plugin.settings.maxDuePerSession = !isNaN(parsed) && parsed > 0 ? parsed : 50;
+            await this.plugin.saveSettings();
+          })
+      );
+
 
     new Setting(containerEl)
       .setName('Перемешивать карточки в начале сессии')

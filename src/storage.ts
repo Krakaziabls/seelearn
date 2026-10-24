@@ -3,9 +3,12 @@ import {
   CardProgressRecord,
   DEFAULT_SETTINGS,
   DEFAULT_STORAGE_DATA,
+  Flashcard,
   SeeLearnSettings,
   SeeLearnStorageData,
+  SRSRatingValue,
 } from './types';
+import { calculateSRSReview, isCardDue, isCardNew, SRSRating } from './srs';
 
 export class StorageManager {
   private plugin: Plugin;
@@ -82,7 +85,6 @@ export class StorageManager {
     }, delayMs) as any;
   }
 
-
   /**
    * Retrieves review progress for a card by its stable ID.
    */
@@ -91,62 +93,89 @@ export class StorageManager {
   }
 
   /**
-   * Records a study review for a card, updating interval, repetitions, and history.
+   * Records a review using the SM-2 algorithm, updating intervals, repetitions, and history.
    */
-  recordReview(cardId: string, rating: 'know' | 'repeat' | number): CardProgressRecord {
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-
-    let record = this.data.progress[cardId];
-    if (!record) {
-      record = {
-        cardId,
-        repetitions: 0,
-        interval: 0,
-        easeFactor: 2.5,
-        dueDate: todayStr,
-        lastReviewed: today.toISOString(),
-        lapses: 0,
-        history: [],
-      };
-      this.data.progress[cardId] = record;
+  recordReview(cardId: string, rating: SRSRatingValue): CardProgressRecord {
+    let srsRating: SRSRating = 'good';
+    if (rating === 'again' || rating === 'repeat' || rating === 1) {
+      srsRating = 'again';
+    } else if (rating === 'hard' || rating === 2) {
+      srsRating = 'hard';
+    } else if (rating === 'easy' || rating === 4 || rating === 5) {
+      srsRating = 'easy';
+    } else {
+      srsRating = 'good';
     }
+
+    const currentRecord = this.data.progress[cardId];
+    const result = calculateSRSReview(currentRecord, srsRating);
+
+    const record: CardProgressRecord = currentRecord
+      ? currentRecord
+      : {
+          cardId,
+          repetitions: 0,
+          interval: 0,
+          easeFactor: 2.5,
+          dueDate: '',
+          lastReviewed: '',
+          lapses: 0,
+          history: [],
+        };
+
+    record.repetitions = result.repetitions;
+    record.interval = result.interval;
+    record.easeFactor = result.easeFactor;
+    record.dueDate = result.dueDate;
+    record.lapses = result.lapses;
+    record.lastReviewed = new Date().toISOString();
 
     if (!record.history) {
       record.history = [];
     }
-
-    record.lastReviewed = today.toISOString();
     record.history.push({
-      date: today.toISOString(),
+      date: record.lastReviewed,
       rating,
     });
 
-    if (rating === 'know' || (typeof rating === 'number' && rating >= 3)) {
-      record.repetitions += 1;
-      if (record.repetitions === 1) {
-        record.interval = 1;
-      } else if (record.repetitions === 2) {
-        record.interval = 6;
-      } else {
-        record.interval = Math.round(record.interval * record.easeFactor);
-      }
-    } else {
-      // Repeat / Again
-      record.repetitions = 0;
-      record.interval = 1;
-      record.lapses += 1;
-      record.easeFactor = Math.max(1.3, record.easeFactor - 0.2);
-    }
-
-    // Compute next due date: today + interval days
-    const nextDue = new Date(today);
-    nextDue.setDate(nextDue.getDate() + record.interval);
-    record.dueDate = nextDue.toISOString().split('T')[0];
-
+    this.data.progress[cardId] = record;
     this.scheduleSave();
     return record;
   }
+
+  /**
+   * Calculates SRS breakdown for a list of cards (due, new, learned).
+   */
+  getSRSBreakdown(cards: Flashcard[]): {
+    total: number;
+    due: number;
+    newCards: number;
+    learned: number;
+  } {
+    const todayStr = new Date().toISOString().split('T')[0];
+    let due = 0;
+    let newCards = 0;
+    let learned = 0;
+
+    for (const card of cards) {
+      const record = this.data.progress[card.id];
+      if (isCardNew(record)) {
+        newCards++;
+      } else if (isCardDue(record, todayStr)) {
+        due++;
+      } else {
+        learned++;
+      }
+    }
+
+    return {
+      total: cards.length,
+      due,
+      newCards,
+      learned,
+    };
+  }
+
 
   /**
    * Returns statistics about all tracked cards.

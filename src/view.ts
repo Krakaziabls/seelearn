@@ -10,8 +10,9 @@ import {
   App,
 } from 'obsidian';
 import type SeeLearnPlugin from './main';
-import { Flashcard, ValidationWarning } from './types';
+import { Flashcard, SRSQueueFilter, ValidationWarning } from './types';
 import { fisherYatesShuffle, interleaveCards } from './shuffle';
+import { getSRSIntervalPreviews, isCardDue, isCardNew, SRSRating } from './srs';
 
 export const VIEW_TYPE_SEELEARN = 'seelearn-study-view';
 
@@ -19,10 +20,12 @@ export class StudyView extends ItemView {
   plugin: SeeLearnPlugin;
   private selectedTags: Set<string> = new Set();
   private selectedFile: string = '';
+  private srsFilter: SRSQueueFilter = 'all';
   private sessionQueue: Flashcard[] = [];
   private currentIndex: number = 0;
   private isFlipped: boolean = false;
   private activeCardComponent: Component | null = null;
+
 
   // DOM Elements
   private toolbarEl!: HTMLElement;
@@ -84,14 +87,33 @@ export class StudyView extends ItemView {
       } else if (evt.code === 'ArrowRight') {
         evt.preventDefault();
         this.nextCard();
-      } else if (evt.code === 'KeyR' || evt.code === 'Digit1') {
-        evt.preventDefault();
-        this.repeatLater();
-      } else if (evt.code === 'KeyK' || evt.code === 'Digit2') {
-        evt.preventDefault();
-        this.markKnown();
+      } else if (this.plugin.settings.studyMode === 'srs') {
+        if (this.isFlipped) {
+          if (evt.code === 'Digit1' || evt.code === 'Numpad1') {
+            evt.preventDefault();
+            this.handleSRSRating('again');
+          } else if (evt.code === 'Digit2' || evt.code === 'Numpad2') {
+            evt.preventDefault();
+            this.handleSRSRating('hard');
+          } else if (evt.code === 'Digit3' || evt.code === 'Numpad3') {
+            evt.preventDefault();
+            this.handleSRSRating('good');
+          } else if (evt.code === 'Digit4' || evt.code === 'Numpad4') {
+            evt.preventDefault();
+            this.handleSRSRating('easy');
+          }
+        }
+      } else {
+        if (evt.code === 'KeyR' || evt.code === 'Digit1') {
+          evt.preventDefault();
+          this.repeatLater();
+        } else if (evt.code === 'KeyK' || evt.code === 'Digit2') {
+          evt.preventDefault();
+          this.markKnown();
+        }
       }
     });
+
 
     this.resetSession();
   }
@@ -144,7 +166,9 @@ export class StudyView extends ItemView {
   }
 
   private getFilteredCards(): Flashcard[] {
-    return this.plugin.cards.filter((card) => {
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const matching = this.plugin.cards.filter((card) => {
       // File filter
       if (this.selectedFile && card.filePath !== this.selectedFile) {
         return false;
@@ -159,9 +183,46 @@ export class StudyView extends ItemView {
         }
       }
 
+      // SRS Queue filter
+      if (this.plugin.settings.studyMode === 'srs') {
+        const record = this.plugin.storage.getProgress(card.id);
+        if (this.srsFilter === 'due' && !isCardDue(record, todayStr)) {
+          return false;
+        }
+        if (this.srsFilter === 'new' && !isCardNew(record)) {
+          return false;
+        }
+      }
+
       return true;
     });
+
+    if (this.plugin.settings.studyMode === 'srs' && this.srsFilter === 'all') {
+      // In SRS 'all' mode, prioritize due cards, then new cards (up to limits)
+      const dueCards = matching.filter((c) =>
+        isCardDue(this.plugin.storage.getProgress(c.id), todayStr)
+      );
+      const newCards = matching.filter((c) =>
+        isCardNew(this.plugin.storage.getProgress(c.id))
+      );
+      const otherCards = matching.filter(
+        (c) =>
+          !isCardDue(this.plugin.storage.getProgress(c.id), todayStr) &&
+          !isCardNew(this.plugin.storage.getProgress(c.id))
+      );
+
+      const maxDue = this.plugin.settings.maxDuePerSession || 50;
+      const maxNew = this.plugin.settings.maxNewPerSession || 25;
+
+      const limitedDue = dueCards.slice(0, maxDue);
+      const limitedNew = newCards.slice(0, maxNew);
+
+      return [...limitedDue, ...limitedNew, ...otherCards];
+    }
+
+    return matching;
   }
+
 
   private getAllAvailableTags(): { tag: string; count: number }[] {
     const tagCounts = new Map<string, number>();
@@ -252,7 +313,44 @@ export class StudyView extends ItemView {
       await this.plugin.reloadAllCards();
     });
 
+    // SRS Queue Filter Pills (All / Due / New)
+    if (this.plugin.settings.studyMode === 'srs') {
+      const breakdown = this.plugin.storage.getSRSBreakdown(this.plugin.cards);
+      const srsGroup = this.toolbarEl.createDiv({ cls: 'seelearn-srs-filter-group' });
+
+      const allPill = srsGroup.createEl('button', {
+        cls: `seelearn-srs-pill ${this.srsFilter === 'all' ? 'is-active' : ''}`,
+        text: `Все (${breakdown.total})`,
+        title: 'Показать все карточки',
+      });
+      allPill.addEventListener('click', () => {
+        this.srsFilter = 'all';
+        this.resetSession();
+      });
+
+      const duePill = srsGroup.createEl('button', {
+        cls: `seelearn-srs-pill seelearn-pill-due ${this.srsFilter === 'due' ? 'is-active' : ''}`,
+        text: `К повторению (${breakdown.due})`,
+        title: 'Карточки, запланированные на сегодня по алгоритму SM-2',
+      });
+      duePill.addEventListener('click', () => {
+        this.srsFilter = 'due';
+        this.resetSession();
+      });
+
+      const newPill = srsGroup.createEl('button', {
+        cls: `seelearn-srs-pill seelearn-pill-new ${this.srsFilter === 'new' ? 'is-active' : ''}`,
+        text: `Новые (${breakdown.newCards})`,
+        title: 'Еще не изученные карточки',
+      });
+      newPill.addEventListener('click', () => {
+        this.srsFilter = 'new';
+        this.resetSession();
+      });
+    }
+
     // Validation warnings badge (if any)
+
     if (this.plugin.warnings.length > 0) {
       const warnBadge = rightGroup.createEl('button', {
         cls: 'seelearn-badge seelearn-badge-warning',
@@ -510,51 +608,154 @@ topics:
     const centerNav = this.navBarEl.createDiv({ cls: 'seelearn-nav-group center' });
     const rightNav = this.navBarEl.createDiv({ cls: 'seelearn-nav-group right' });
 
-    // Previous Button
-    const prevBtn = leftNav.createEl('button', {
-      cls: 'seelearn-nav-btn',
-      text: '← Назад',
-      title: 'Предыдущая карточка (ArrowLeft)',
-    });
-    prevBtn.disabled = !hasCards || isFirst;
-    prevBtn.addEventListener('click', () => this.prevCard());
+    // Check study mode
+    if (this.plugin.settings.studyMode === 'srs') {
+      if (!this.isFlipped) {
+        // STATE 1 (Question): Standard navigation
+        const prevBtn = leftNav.createEl('button', {
+          cls: 'seelearn-nav-btn',
+          text: '← Назад',
+          title: 'Предыдущая карточка (ArrowLeft)',
+        });
+        prevBtn.disabled = !hasCards || isFirst;
+        prevBtn.addEventListener('click', () => this.prevCard());
 
-    // Flip Button
-    const flipText = !this.isFlipped ? 'Показать ответ' : 'Скрыть ответ';
-    const flipBtn = centerNav.createEl('button', {
-      cls: 'seelearn-nav-btn mod-cta',
-      text: `${flipText} (Space)`,
-      title: 'Перевернуть карточку (Space)',
-    });
-    flipBtn.disabled = !hasCards;
-    flipBtn.addEventListener('click', () => this.flipCard());
+        const flipBtn = centerNav.createEl('button', {
+          cls: 'seelearn-nav-btn mod-cta',
+          text: 'Показать ответ (Space)',
+          title: 'Перевернуть карточку (Space)',
+        });
+        flipBtn.disabled = !hasCards;
+        flipBtn.addEventListener('click', () => this.flipCard());
 
-    // Next Button
-    const nextBtn = centerNav.createEl('button', {
-      cls: 'seelearn-nav-btn',
-      text: 'Далее →',
-      title: 'Следующая карточка (ArrowRight)',
-    });
-    nextBtn.disabled = !hasCards || isLast;
-    nextBtn.addEventListener('click', () => this.nextCard());
+        const nextBtn = centerNav.createEl('button', {
+          cls: 'seelearn-nav-btn',
+          text: 'Далее →',
+          title: 'Следующая карточка (ArrowRight)',
+        });
+        nextBtn.disabled = !hasCards || isLast;
+        nextBtn.addEventListener('click', () => this.nextCard());
+      } else {
+        // STATE 2 (Answer): 4 SRS Rating Buttons with predicted intervals
+        const currentCard = this.sessionQueue[this.currentIndex];
+        const record = currentCard ? this.plugin.storage.getProgress(currentCard.id) : undefined;
+        const previews = getSRSIntervalPreviews(record);
 
-    // Session buttons: Repeat Later & Know
-    const repeatBtn = rightNav.createEl('button', {
-      cls: 'seelearn-nav-btn seelearn-btn-repeat',
-      text: 'Повторить позже',
-      title: 'Переместить карту в конец очереди (клавиша 1 / R)',
-    });
-    repeatBtn.disabled = !hasCards;
-    repeatBtn.addEventListener('click', () => this.repeatLater());
+        // [1] Снова
+        const againBtn = centerNav.createEl('button', {
+          cls: 'seelearn-nav-btn seelearn-btn-srs seelearn-btn-again',
+          title: 'Забыл ответ (клавиша 1)',
+        });
+        againBtn.createSpan({ cls: 'seelearn-srs-title', text: '[1] Снова' });
+        againBtn.createSpan({ cls: 'seelearn-srs-badge', text: previews.again });
+        againBtn.addEventListener('click', () => this.handleSRSRating('again'));
 
-    const knowBtn = rightNav.createEl('button', {
-      cls: 'seelearn-nav-btn seelearn-btn-know',
-      text: 'Знаю ✓',
-      title: 'Убрать карту из текущей сессии (клавиша 2 / K)',
-    });
-    knowBtn.disabled = !hasCards;
-    knowBtn.addEventListener('click', () => this.markKnown());
+        // [2] Трудно
+        const hardBtn = centerNav.createEl('button', {
+          cls: 'seelearn-nav-btn seelearn-btn-srs seelearn-btn-hard',
+          title: 'Вспомнил с заметным трудом (клавиша 2)',
+        });
+        hardBtn.createSpan({ cls: 'seelearn-srs-title', text: '[2] Трудно' });
+        hardBtn.createSpan({ cls: 'seelearn-srs-badge', text: previews.hard });
+        hardBtn.addEventListener('click', () => this.handleSRSRating('hard'));
+
+        // [3] Хорошо
+        const goodBtn = centerNav.createEl('button', {
+          cls: 'seelearn-nav-btn seelearn-btn-srs seelearn-btn-good mod-cta',
+          title: 'Уверенно вспомнил (клавиша 3)',
+        });
+        goodBtn.createSpan({ cls: 'seelearn-srs-title', text: '[3] Хорошо' });
+        goodBtn.createSpan({ cls: 'seelearn-srs-badge', text: previews.good });
+        goodBtn.addEventListener('click', () => this.handleSRSRating('good'));
+
+        // [4] Легко
+        const easyBtn = centerNav.createEl('button', {
+          cls: 'seelearn-nav-btn seelearn-btn-srs seelearn-btn-easy',
+          title: 'Мгновенный и легкий ответ (клавиша 4)',
+        });
+        easyBtn.createSpan({ cls: 'seelearn-srs-title', text: '[4] Легко' });
+        easyBtn.createSpan({ cls: 'seelearn-srs-badge', text: previews.easy });
+        easyBtn.addEventListener('click', () => this.handleSRSRating('easy'));
+      }
+    } else {
+      // Cram Mode (Casual review)
+      const prevBtn = leftNav.createEl('button', {
+        cls: 'seelearn-nav-btn',
+        text: '← Назад',
+        title: 'Предыдущая карточка (ArrowLeft)',
+      });
+      prevBtn.disabled = !hasCards || isFirst;
+      prevBtn.addEventListener('click', () => this.prevCard());
+
+      const flipText = !this.isFlipped ? 'Показать ответ' : 'Скрыть ответ';
+      const flipBtn = centerNav.createEl('button', {
+        cls: 'seelearn-nav-btn mod-cta',
+        text: `${flipText} (Space)`,
+        title: 'Перевернуть карточку (Space)',
+      });
+      flipBtn.disabled = !hasCards;
+      flipBtn.addEventListener('click', () => this.flipCard());
+
+      const nextBtn = centerNav.createEl('button', {
+        cls: 'seelearn-nav-btn',
+        text: 'Далее →',
+        title: 'Следующая карточка (ArrowRight)',
+      });
+      nextBtn.disabled = !hasCards || isLast;
+      nextBtn.addEventListener('click', () => this.nextCard());
+
+      const repeatBtn = rightNav.createEl('button', {
+        cls: 'seelearn-nav-btn seelearn-btn-repeat',
+        text: 'Повторить позже',
+        title: 'Переместить карту в конец очереди (клавиша 1 / R)',
+      });
+      repeatBtn.disabled = !hasCards;
+      repeatBtn.addEventListener('click', () => this.repeatLater());
+
+      const knowBtn = rightNav.createEl('button', {
+        cls: 'seelearn-nav-btn seelearn-btn-know',
+        text: 'Знаю ✓',
+        title: 'Убрать карту из текущей сессии (клавиша 2 / K)',
+      });
+      knowBtn.disabled = !hasCards;
+      knowBtn.addEventListener('click', () => this.markKnown());
+    }
   }
+
+  private handleSRSRating(rating: SRSRating): void {
+    if (this.sessionQueue.length === 0) return;
+
+    const card = this.sessionQueue[this.currentIndex];
+    const result = this.plugin.storage.recordReview(card.id, rating);
+
+    const labels: Record<SRSRating, string> = {
+      again: 'Снова (<1д)',
+      hard: `Трудно (${result.interval} дн.)`,
+      good: `Хорошо (${result.interval} дн.)`,
+      easy: `Легко (${result.interval} дн.)`,
+    };
+
+    new Notice(`${labels[rating]} — интервал обновлен`);
+
+    if (rating === 'again') {
+      // Requeue card in the same session after requeueStep cards
+      this.sessionQueue.splice(this.currentIndex, 1);
+      const step = Math.max(1, this.plugin.settings.requeueStep || 3);
+      const insertAt = Math.min(this.sessionQueue.length, this.currentIndex + step);
+      this.sessionQueue.splice(insertAt, 0, card);
+    } else {
+      // Completed for today, remove from session queue
+      this.sessionQueue.splice(this.currentIndex, 1);
+    }
+
+    if (this.currentIndex >= this.sessionQueue.length) {
+      this.currentIndex = Math.max(0, this.sessionQueue.length - 1);
+    }
+
+    this.isFlipped = false;
+    this.renderAll();
+  }
+
 
   // --- ACTIONS ---
 
