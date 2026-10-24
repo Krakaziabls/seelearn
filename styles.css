@@ -1,0 +1,460 @@
+/* ==========================================================================
+   SeeLearn Plugin Styles
+   Compatible with light and dark themes using native Obsidian CSS variables
+   ========================================================================== */
+
+/* Main View Root Container */
+.seelearn-view-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-family: var(--font-ui);
+}
+
+/* --------------------------------------------------------------------------
+   Top Toolbar
+   -------------------------------------------------------------------------- */
+.seelearn-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background-color: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.seelearn-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.seelearn-file-select {
+  max-width: 240px;
+  font-size: 0.88em;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s, 4px);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.seelearn-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: var(--radius-s, 4px);
+  cursor: pointer;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all 0.15s ease-in-out;
+}
+
+.seelearn-btn-icon:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+  border-color: var(--background-modifier-border);
+}
+
+.seelearn-btn-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.seelearn-counter-badge {
+  font-size: 0.85em;
+  font-weight: 500;
+  color: var(--text-muted);
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  padding: 3px 10px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.seelearn-badge-warning {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: var(--color-orange, #f59e0b);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  padding: 3px 8px;
+  font-size: 0.82em;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.seelearn-badge-warning:hover {
+  background-color: rgba(245, 158, 11, 0.25);
+}
+
+/* --------------------------------------------------------------------------
+   Tags & Topics Bar (Horizontal scrollable chips)
+   -------------------------------------------------------------------------- */
+.seelearn-tags-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background-color: var(--background-primary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+
+.seelearn-tags-bar::-webkit-scrollbar {
+  height: 4px;
+}
+
+.seelearn-tags-bar::-webkit-scrollbar-thumb {
+  background-color: var(--background-modifier-border);
+  border-radius: 2px;
+}
+
+.seelearn-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 14px;
+  font-size: 0.82em;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary);
+  color: var(--text-muted);
+  transition: all 0.15s ease-in-out;
+}
+
+.seelearn-tag-chip:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.seelearn-tag-chip.is-active {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+  font-weight: 500;
+}
+
+.seelearn-tag-count {
+  font-size: 0.8em;
+  opacity: 0.75;
+  background: rgba(0, 0, 0, 0.1);
+  padding: 1px 5px;
+  border-radius: 8px;
+}
+
+.seelearn-tag-chip.is-active .seelearn-tag-count {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* --------------------------------------------------------------------------
+   Card Study Area
+   -------------------------------------------------------------------------- */
+.seelearn-card-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+  position: relative;
+}
+
+.seelearn-card-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 820px;
+  min-height: 380px;
+  max-height: 100%;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l, 12px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.seelearn-card-container:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Card Header */
+.seelearn-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary-alt, var(--background-secondary));
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.seelearn-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.seelearn-card-tags {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.seelearn-card-tag-pill {
+  font-size: 0.78em;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background-color: var(--tag-background, rgba(125, 125, 125, 0.15));
+  color: var(--tag-color, var(--text-accent));
+  font-weight: 500;
+}
+
+.seelearn-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.seelearn-file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8em;
+  color: var(--text-muted);
+}
+
+.seelearn-icon-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.seelearn-icon-inline svg {
+  width: 14px;
+  height: 14px;
+}
+
+.seelearn-jump-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8em;
+  padding: 2px 8px;
+  border-radius: var(--radius-s, 4px);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.seelearn-jump-btn:hover {
+  color: var(--text-accent);
+  border-color: var(--interactive-accent);
+}
+
+/* Card Body & Markdown Content */
+.seelearn-card-body {
+  flex: 1;
+  padding: 28px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  user-select: text;
+}
+
+.seelearn-content {
+  font-family: var(--font-text);
+  line-height: 1.65;
+  color: var(--text-normal);
+  font-size: 1.05em;
+  width: 100%;
+}
+
+.seelearn-front {
+  transition: opacity 0.2s ease;
+}
+
+.seelearn-front.seelearn-faded {
+  opacity: 0.65;
+  font-size: 0.95em;
+}
+
+/* Divider in 'append' mode */
+.seelearn-divider {
+  position: relative;
+  margin: 24px 0 20px 0;
+  border-top: 1px dashed var(--interactive-accent);
+  text-align: center;
+}
+
+.seelearn-divider-text {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--background-secondary);
+  padding: 0 12px;
+  font-size: 0.74em;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--interactive-accent);
+}
+
+.seelearn-back {
+  animation: seelearnFadeIn 0.2s ease-in-out;
+}
+
+@keyframes seelearnFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.seelearn-flip-prompt {
+  margin-top: auto;
+  padding-top: 24px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 0.85em;
+  font-style: italic;
+  pointer-events: none;
+}
+
+/* Empty State */
+.seelearn-empty-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px;
+  max-width: 580px;
+}
+
+.seelearn-empty-icon {
+  margin-bottom: 12px;
+  color: var(--text-faint);
+}
+
+.seelearn-empty-icon svg {
+  width: 48px;
+  height: 48px;
+}
+
+.seelearn-sample-code {
+  margin-top: 16px;
+  text-align: left;
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  padding: 14px;
+  font-size: 0.85em;
+  width: 100%;
+  overflow-x: auto;
+}
+
+/* --------------------------------------------------------------------------
+   Bottom Navigation Bar
+   -------------------------------------------------------------------------- */
+.seelearn-nav-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  background-color: var(--background-secondary);
+  border-top: 1px solid var(--background-modifier-border);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.seelearn-nav-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.seelearn-nav-btn {
+  font-size: 0.9em;
+  padding: 6px 14px;
+  border-radius: var(--radius-s, 4px);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.seelearn-btn-know {
+  border: 1px solid var(--color-green, #10b981) !important;
+  color: var(--color-green, #10b981) !important;
+  background: transparent;
+}
+
+.seelearn-btn-know:hover:not(:disabled) {
+  background-color: var(--color-green, #10b981) !important;
+  color: #ffffff !important;
+}
+
+.seelearn-btn-repeat {
+  border: 1px solid var(--color-orange, #f59e0b) !important;
+  color: var(--color-orange, #f59e0b) !important;
+  background: transparent;
+}
+
+.seelearn-btn-repeat:hover:not(:disabled) {
+  background-color: var(--color-orange, #f59e0b) !important;
+  color: #ffffff !important;
+}
+
+/* --------------------------------------------------------------------------
+   Validation Warnings Modal
+   -------------------------------------------------------------------------- */
+.seelearn-warnings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-top: 16px;
+}
+
+.seelearn-warning-item {
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-left: 4px solid var(--color-orange, #f59e0b);
+  border-radius: var(--radius-s, 4px);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.seelearn-warning-title {
+  color: var(--text-normal);
+  font-size: 0.95em;
+}
+
+.seelearn-warning-msg {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}

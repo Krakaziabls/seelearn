@@ -1,0 +1,10 @@
+{
+  "id": "seelearn",
+  "name": "SeeLearn",
+  "version": "1.0.0",
+  "minAppVersion": "1.0.0",
+  "description": "Turn marked fragments in markdown notes into interactive flashcards with native Obsidian rendering and topic inheritance.",
+  "author": "Andrey Shelyagin",
+  "authorUrl": "https://github.com/Krakaziabls",
+  "isDesktopOnly": false
+}
