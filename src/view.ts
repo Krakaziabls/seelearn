@@ -34,6 +34,7 @@ export class StudyView extends ItemView {
   private currentIndex: number = 0;
   private isFlipped: boolean = false;
   private activeCardComponent: Component | null = null;
+  private sessionState: 'lobby' | 'active' | 'finished' = 'lobby';
 
   // Session metrics for summary dashboard
   private sessionStats = {
@@ -101,6 +102,25 @@ export class StudyView extends ItemView {
         return;
       }
 
+      // Lobby navigation: Space or Enter starts the session
+      if (this.sessionState === 'lobby') {
+        if (evt.code === 'Space' || evt.code === 'Enter') {
+          evt.preventDefault();
+          this.startSession();
+        }
+        return;
+      }
+
+      // Summary screen navigation: Space or Enter returns to lobby
+      if (this.sessionState === 'finished') {
+        if (evt.code === 'Space' || evt.code === 'Enter') {
+          evt.preventDefault();
+          this.sessionState = 'lobby';
+          this.resetSession();
+        }
+        return;
+      }
+
       // Undo: Ctrl+Z / Cmd+Z / Key U
       if ((evt.ctrlKey || evt.metaKey) && evt.code === 'KeyZ') {
         evt.preventDefault();
@@ -138,6 +158,7 @@ export class StudyView extends ItemView {
       }
     });
 
+    this.sessionState = 'lobby';
     this.resetSession();
   }
 
@@ -151,10 +172,14 @@ export class StudyView extends ItemView {
   }
 
   /**
-   * Resets the session queue according to currently active filters and scope.
+   * Begins an active learning or testing session with a frozen queue snapshot.
    */
-  public resetSession(keepIndex = false): void {
+  public startSession(): void {
     let filtered = this.getFilteredCards();
+    if (filtered.length === 0) {
+      new Notice('Нет доступных карточек для начала сессии');
+      return;
+    }
 
     if (this.plugin.settings.shuffleOnStart) {
       filtered = this.plugin.settings.interleaveTopics
@@ -163,11 +188,41 @@ export class StudyView extends ItemView {
     }
 
     this.sessionQueue = [...filtered];
-
-    if (!keepIndex || this.currentIndex >= this.sessionQueue.length) {
-      this.currentIndex = 0;
-    }
+    this.currentIndex = 0;
     this.isFlipped = false;
+    this.sessionState = 'active';
+    this.historyStack = [];
+    this.sessionStats = {
+      totalReviewed: 0,
+      againCount: 0,
+      hardCount: 0,
+      goodCount: 0,
+      easyCount: 0,
+      failedCards: [],
+    };
+    this.renderAll();
+  }
+
+  /**
+   * Resets the session queue according to currently active filters and scope.
+   */
+  public resetSession(keepIndex = false): void {
+    let filtered = this.getFilteredCards();
+
+    if (this.sessionState === 'active') {
+      if (this.plugin.settings.shuffleOnStart) {
+        filtered = this.plugin.settings.interleaveTopics
+          ? interleaveCards(filtered)
+          : fisherYatesShuffle(filtered);
+      }
+
+      this.sessionQueue = [...filtered];
+
+      if (!keepIndex || this.currentIndex >= this.sessionQueue.length) {
+        this.currentIndex = 0;
+      }
+      this.isFlipped = false;
+    }
 
     this.renderAll();
   }
@@ -307,13 +362,13 @@ export class StudyView extends ItemView {
     }
 
     const folders = Array.from(folderCounts.entries())
-      .map(([path, count]) => ({ path, label: `📁 ${path}/`, count }))
+      .map(([path, count]) => ({ path, label: `${path}/`, count }))
       .sort((a, b) => a.path.localeCompare(b.path));
 
     const files = Array.from(fileCounts.entries())
       .map(([path, count]) => ({
         path,
-        label: `📄 ${path.split('/').pop() || path}`,
+        label: `${path.split('/').pop() || path}`,
         count,
       }))
       .sort((a, b) => a.label.localeCompare(b.label));
@@ -337,29 +392,24 @@ export class StudyView extends ItemView {
     const leftGroup = this.toolbarEl.createDiv({ cls: 'seelearn-toolbar-group left' });
     const rightGroup = this.toolbarEl.createDiv({ cls: 'seelearn-toolbar-group right' });
 
-    // 1. Study Mode Switcher: [ 📖 Ботать | 🎯 Проверить знания ]
-    const modeSwitch = leftGroup.createDiv({ cls: 'seelearn-mode-switch' });
+    // 1. Study Mode Toggle (Compact): [ icon "Проверка знаний" / "Ботать" ]
     const isTest = this.isTestMode();
-
-    const learnBtn = modeSwitch.createEl('button', {
-      cls: `seelearn-mode-btn ${!isTest ? 'is-active' : ''}`,
-      text: '📖 Ботать',
-      title: 'Режим изучения: чтение и просмотр материала без оценок (по умолчанию)',
+    const modeToggle = leftGroup.createEl('button', {
+      cls: `seelearn-mode-toggle ${isTest ? 'is-test' : 'is-learn'}`,
+      title: isTest
+        ? 'Режим проверки знаний (SRS). Нажмите для переключения на режим «Ботать»'
+        : 'Режим «Ботать» (чтение). Нажмите для переключения на режим «Проверка знаний»',
     });
-    learnBtn.addEventListener('click', async () => {
-      this.plugin.settings.studyMode = 'learn';
+    const modeIcon = modeToggle.createSpan({ cls: 'seelearn-icon-inline' });
+    setIcon(modeIcon, isTest ? 'crosshair' : 'book-open');
+    modeToggle.createSpan({
+      cls: 'seelearn-mode-label',
+      text: isTest ? 'Проверка знаний' : 'Ботать',
+    });
+    modeToggle.addEventListener('click', async () => {
+      this.plugin.settings.studyMode = isTest ? 'learn' : 'test';
       await this.plugin.saveSettings();
-      this.resetSession();
-    });
-
-    const testBtn = modeSwitch.createEl('button', {
-      cls: `seelearn-mode-btn ${isTest ? 'is-active' : ''}`,
-      text: '🎯 Проверить знания',
-      title: 'Режим тестирования: интервальное повторение SM-2, оценки 1-4 и замер успехов',
-    });
-    testBtn.addEventListener('click', async () => {
-      this.plugin.settings.studyMode = 'test';
-      await this.plugin.saveSettings();
+      this.sessionState = 'lobby';
       this.resetSession();
     });
 
@@ -399,6 +449,7 @@ export class StudyView extends ItemView {
 
     scopeSelect.addEventListener('change', () => {
       this.selectedScope = scopeSelect.value;
+      this.sessionState = 'lobby';
       this.resetSession();
     });
 
@@ -436,6 +487,7 @@ export class StudyView extends ItemView {
       });
       allPill.addEventListener('click', () => {
         this.srsFilter = 'all';
+        this.sessionState = 'lobby';
         this.resetSession();
       });
 
@@ -446,6 +498,7 @@ export class StudyView extends ItemView {
       });
       duePill.addEventListener('click', () => {
         this.srsFilter = 'due';
+        this.sessionState = 'lobby';
         this.resetSession();
       });
 
@@ -456,6 +509,7 @@ export class StudyView extends ItemView {
       });
       newPill.addEventListener('click', () => {
         this.srsFilter = 'new';
+        this.sessionState = 'lobby';
         this.resetSession();
       });
     }
@@ -464,21 +518,40 @@ export class StudyView extends ItemView {
     if (this.plugin.warnings.length > 0) {
       const warnBadge = rightGroup.createEl('button', {
         cls: 'seelearn-badge seelearn-badge-warning',
-        text: `⚠️ Ошибки: ${this.plugin.warnings.length}`,
         title: 'Нажмите, чтобы просмотреть предупреждения валидации',
       });
+      setIcon(warnBadge.createSpan({ cls: 'seelearn-icon-inline' }), 'alert-triangle');
+      warnBadge.createSpan({ text: ` Ошибки: ${this.plugin.warnings.length}` });
       warnBadge.addEventListener('click', () => {
         new WarningsModal(this.app, this.plugin.warnings).open();
       });
     }
 
-    // 7. Card Counter
-    const total = this.sessionQueue.length;
-    const current = total > 0 ? this.currentIndex + 1 : 0;
-    rightGroup.createDiv({
-      cls: 'seelearn-counter-badge',
-      text: `Карта ${current} из ${total}`,
-    });
+    // 7. Session Actions & Card Counter
+    if (this.sessionState === 'active') {
+      const finishBtn = rightGroup.createEl('button', {
+        cls: 'clickable-icon seelearn-btn-icon',
+        title: 'Завершить текущую сессию и перейти к итогам',
+      });
+      setIcon(finishBtn, 'log-out');
+      finishBtn.addEventListener('click', () => {
+        this.sessionState = 'finished';
+        this.renderAll();
+      });
+
+      const total = this.sessionQueue.length;
+      const current = total > 0 ? this.currentIndex + 1 : 0;
+      rightGroup.createDiv({
+        cls: 'seelearn-counter-badge',
+        text: `Карта ${current} из ${total}`,
+      });
+    } else if (this.sessionState === 'lobby') {
+      const matchingCount = this.getFilteredCards().length;
+      rightGroup.createDiv({
+        cls: 'seelearn-counter-badge',
+        text: `В очереди: ${matchingCount}`,
+      });
+    }
   }
 
   /**
@@ -536,6 +609,7 @@ export class StudyView extends ItemView {
     });
     allChip.addEventListener('click', () => {
       this.selectedTags.clear();
+      this.sessionState = 'lobby';
       this.resetSession();
     });
 
@@ -557,6 +631,7 @@ export class StudyView extends ItemView {
         } else {
           this.selectedTags.add(tag);
         }
+        this.sessionState = 'lobby';
         this.resetSession();
       });
     }
@@ -572,22 +647,49 @@ export class StudyView extends ItemView {
   /**
    * Renders the card container, header, progress track, and markdown content.
    */
+  /**
+   * Renders the card container, header, progress track, and markdown content.
+   */
   private async renderCardArea(): Promise<void> {
     this.cleanupCardComponent();
     this.cardAreaEl.empty();
 
-    if (this.sessionQueue.length === 0) {
+    if (this.plugin.cards.length === 0) {
       this.renderEmptyState();
+      return;
+    }
+
+    if (this.sessionState === 'lobby') {
+      this.renderLobbyState();
+      return;
+    }
+
+    if (this.sessionState === 'finished' || this.sessionQueue.length === 0) {
+      this.renderFinishedState();
       return;
     }
 
     const card = this.sessionQueue[this.currentIndex];
     if (!card) {
-      this.renderEmptyState();
+      this.renderFinishedState();
       return;
     }
 
-    const cardContainer = this.cardAreaEl.createDiv({ cls: 'seelearn-card-container' });
+    const cardWrapper = this.cardAreaEl.createDiv({ cls: 'seelearn-card-wrapper' });
+
+    // Side navigation arrow: Previous
+    const prevArrow = cardWrapper.createEl('button', {
+      cls: 'seelearn-side-arrow prev',
+      title: 'Предыдущая карточка (ArrowLeft)',
+    });
+    setIcon(prevArrow, 'chevron-left');
+    prevArrow.disabled = this.currentIndex === 0;
+    prevArrow.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.prevCard();
+    });
+
+    const cardContainer = cardWrapper.createDiv({ cls: 'seelearn-card-container' });
     if (this.plugin.settings.enable3DFlip) {
       cardContainer.addClass('seelearn-enable-3d');
     }
@@ -606,7 +708,6 @@ export class StudyView extends ItemView {
 
     // Card Header (Tags, File, Jump to Note button)
     const cardHeader = cardContainer.createDiv({ cls: 'seelearn-card-header' });
-
     const headerLeft = cardHeader.createDiv({ cls: 'seelearn-header-left' });
 
     // Progress badge / Card kind pill
@@ -638,7 +739,8 @@ export class StudyView extends ItemView {
     const isLeech = isCardLeech(progress, this.plugin.settings.leechThreshold || 4);
     if (isLeech) {
       const leechPill = headerLeft.createSpan({ cls: 'seelearn-progress-pill is-leech' });
-      leechPill.setText(`⚡ ПИЯВКА (${progress?.lapses} сбоев)`);
+      setIcon(leechPill.createSpan({ cls: 'seelearn-icon-inline' }), 'zap');
+      leechPill.createSpan({ text: ` ПИЯВКА (${progress?.lapses})` });
       leechPill.setAttribute(
         'title',
         'Карточка вызывает частые ошибки. Рекомендуется переформулировать или разбить на простые факты.'
@@ -648,7 +750,8 @@ export class StudyView extends ItemView {
     // Cloze Deletion badge
     if (card.isCloze) {
       const clozePill = headerLeft.createSpan({ cls: 'seelearn-progress-pill is-cloze' });
-      clozePill.setText('[...] КЛОУЗ');
+      setIcon(clozePill.createSpan({ cls: 'seelearn-icon-inline' }), 'scissors');
+      clozePill.createSpan({ text: ' КЛОУЗ' });
       clozePill.setAttribute('title', 'Карточка с заполнением пропусков (Cloze Deletion)');
     }
 
@@ -667,7 +770,7 @@ export class StudyView extends ItemView {
       cls: 'seelearn-jump-btn seelearn-btn-edit',
       title: 'Быстрое редактирование карточки без перехода в заметку',
     });
-    setIcon(editBtn.createSpan({ cls: 'seelearn-icon-inline' }), 'edit-3');
+    setIcon(editBtn.createSpan({ cls: 'seelearn-icon-inline' }), 'file-edit');
     editBtn.createSpan({ text: 'Изменить' });
     editBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -714,7 +817,7 @@ export class StudyView extends ItemView {
       );
 
       const promptEl = cardBody.createDiv({ cls: 'seelearn-flip-prompt' });
-      promptEl.createSpan({ text: 'Нажмите Пробел или кнопку «Далее» для продолжения' });
+      promptEl.createSpan({ text: 'Нажмите Пробел или стрелку «Далее» для продолжения' });
 
       cardBody.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
@@ -773,10 +876,258 @@ export class StudyView extends ItemView {
         }
       });
     }
+
+    // Side navigation arrow: Next
+    const nextArrow = cardWrapper.createEl('button', {
+      cls: 'seelearn-side-arrow next',
+      title: 'Следующая карточка (ArrowRight)',
+    });
+    setIcon(nextArrow, 'chevron-right');
+    nextArrow.disabled = this.currentIndex >= this.sessionQueue.length - 1;
+    nextArrow.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.nextCard();
+    });
   }
 
   /**
-   * Renders empty or completed state with session summary dashboard.
+   * Renders the pre-session Lobby screen (Deck Overview).
+   */
+  private renderLobbyState(): void {
+    const matchingCards = this.getFilteredCards();
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const dueCards = matchingCards.filter((c) =>
+      isCardDue(this.plugin.storage.getProgress(c.id), todayStr)
+    );
+    const newCards = matchingCards.filter((c) =>
+      isCardNew(this.plugin.storage.getProgress(c.id))
+    );
+
+    const lobbyBox = this.cardAreaEl.createDiv({ cls: 'seelearn-lobby-box' });
+
+    // Lobby Header
+    const iconWrap = lobbyBox.createDiv({ cls: 'seelearn-lobby-icon' });
+    setIcon(iconWrap, this.isTestMode() ? 'crosshair' : 'book-open');
+
+    let scopeLabel = 'Все заметки';
+    if (this.selectedScope.startsWith('folder:')) {
+      scopeLabel = `Папка: ${this.selectedScope.substring(7)}`;
+    } else if (this.selectedScope.startsWith('file:')) {
+      scopeLabel = `Заметка: ${this.selectedScope.substring(5).split('/').pop()}`;
+    }
+
+    lobbyBox.createEl('h2', {
+      cls: 'seelearn-lobby-title',
+      text: this.isTestMode() ? 'Готовность к проверке знаний' : 'Готовность к изучению',
+    });
+    lobbyBox.createEl('p', {
+      cls: 'seelearn-lobby-subtitle',
+      text: `${scopeLabel}${this.selectedTags.size > 0 ? ' • ' + Array.from(this.selectedTags).map((t) => '#' + t).join(' ') : ''}`,
+    });
+
+    if (matchingCards.length === 0) {
+      const emptyNote = lobbyBox.createDiv({ cls: 'seelearn-lobby-empty' });
+      emptyNote.createEl('p', {
+        text: 'По выбранным критериям (папка / тема / очередь) карточки не найдены.',
+      });
+      const resetBtn = emptyNote.createEl('button', {
+        cls: 'seelearn-nav-btn',
+        text: 'Сбросить фильтры',
+      });
+      resetBtn.addEventListener('click', () => {
+        this.selectedScope = '';
+        this.selectedTags.clear();
+        this.srsFilter = 'all';
+        this.resetSession();
+      });
+      return;
+    }
+
+    // Grid with statistics
+    const statsGrid = lobbyBox.createDiv({ cls: 'seelearn-lobby-grid' });
+
+    if (this.isTestMode()) {
+      const dueCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
+      dueCard.createDiv({ cls: 'seelearn-stat-val text-warning', text: `${dueCards.length}` });
+      dueCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'К повторению' });
+
+      const newCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
+      newCard.createDiv({ cls: 'seelearn-stat-val text-accent', text: `${newCards.length}` });
+      newCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'Новые' });
+    }
+
+    const totalCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
+    totalCard.createDiv({ cls: 'seelearn-stat-val', text: `${matchingCards.length}` });
+    totalCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'Всего в очереди' });
+
+    const estMinutes = Math.max(1, Math.ceil(matchingCards.length * 0.4));
+    const timeCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
+    timeCard.createDiv({ cls: 'seelearn-stat-val', text: `~${estMinutes} мин` });
+    timeCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'Расчетное время' });
+
+    // Streak stats
+    const streakStats = this.plugin.storage.getStudyStreakStats();
+    const streakBanner = lobbyBox.createDiv({ cls: 'seelearn-streak-banner' });
+    const pill1 = streakBanner.createDiv({ cls: 'seelearn-streak-pill' });
+    setIcon(pill1.createSpan({ cls: 'seelearn-icon-inline' }), 'flame');
+    pill1.createSpan({ text: ` Стрик: ${streakStats.currentStreak} дн.` });
+
+    const pill2 = streakBanner.createDiv({ cls: 'seelearn-streak-pill' });
+    setIcon(pill2.createSpan({ cls: 'seelearn-icon-inline' }), 'trophy');
+    pill2.createSpan({ text: ` Рекорд: ${streakStats.bestStreak} дн.` });
+
+    // Primary action button
+    const actionsRow = lobbyBox.createDiv({ cls: 'seelearn-lobby-actions' });
+    const startBtn = actionsRow.createEl('button', {
+      cls: 'seelearn-start-session-btn mod-cta',
+    });
+    setIcon(startBtn.createSpan({ cls: 'seelearn-icon-inline' }), 'play');
+    startBtn.createSpan({
+      text: this.isTestMode() ? 'Начать сессию проверки' : 'Начать изучение',
+    });
+    startBtn.addEventListener('click', () => {
+      this.startSession();
+    });
+
+    lobbyBox.createEl('div', {
+      cls: 'seelearn-lobby-hint',
+      text: 'Нажмите Пробел или Enter для быстрого старта',
+    });
+  }
+
+  /**
+   * Renders completed state with session summary dashboard.
+   */
+  private renderFinishedState(): void {
+    const emptyBox = this.cardAreaEl.createDiv({ cls: 'seelearn-empty-box' });
+    setIcon(emptyBox.createDiv({ cls: 'seelearn-empty-icon seelearn-icon-celebrate' }), 'award');
+    emptyBox.createEl('h2', { text: 'Сессия завершена!' });
+    emptyBox.createEl('p', {
+      text: this.isTestMode()
+        ? 'Вы повторили запланированные карточки по графику интервального повторения.'
+        : 'Вы изучили все карточки в выбранной области.',
+    });
+
+    const statsGrid = emptyBox.createDiv({ cls: 'seelearn-stats-grid' });
+
+    const item1 = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
+    item1.createDiv({ cls: 'seelearn-stat-val', text: `${this.sessionStats.totalReviewed}` });
+    item1.createDiv({ cls: 'seelearn-stat-lbl', text: 'Пройдено карточек' });
+
+    if (this.isTestMode()) {
+      const successes = this.sessionStats.goodCount + this.sessionStats.easyCount;
+      const totalAnswers = successes + this.sessionStats.hardCount + this.sessionStats.againCount;
+      const successRate = totalAnswers > 0 ? Math.round((successes / totalAnswers) * 100) : 100;
+
+      const item2 = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
+      item2.createDiv({ cls: 'seelearn-stat-val', text: `${successRate}%` });
+      item2.createDiv({ cls: 'seelearn-stat-lbl', text: 'Успешность (Good/Easy)' });
+
+      const item3 = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
+      item3.createDiv({ cls: 'seelearn-stat-val', text: `${this.sessionStats.againCount}` });
+      item3.createDiv({ cls: 'seelearn-stat-lbl', text: 'Забываний (Снова)' });
+    }
+
+    // Streak Stats Banner
+    const streakStats = this.plugin.storage.getStudyStreakStats();
+    const streakBanner = emptyBox.createDiv({ cls: 'seelearn-streak-banner' });
+    const pill1 = streakBanner.createDiv({ cls: 'seelearn-streak-pill' });
+    setIcon(pill1.createSpan({ cls: 'seelearn-icon-inline' }), 'flame');
+    pill1.createSpan({ text: ` Стрик: ${streakStats.currentStreak} дн.` });
+
+    const pill2 = streakBanner.createDiv({ cls: 'seelearn-streak-pill' });
+    setIcon(pill2.createSpan({ cls: 'seelearn-icon-inline' }), 'trophy');
+    pill2.createSpan({ text: ` Рекорд: ${streakStats.bestStreak} дн.` });
+
+    const pill3 = streakBanner.createDiv({ cls: 'seelearn-streak-pill' });
+    setIcon(pill3.createSpan({ cls: 'seelearn-icon-inline' }), 'layers');
+    pill3.createSpan({ text: ` Всего: ${streakStats.totalReviews} повторений` });
+
+    // 35-Day (5-week) Activity Heatmap
+    const heatmapContainer = emptyBox.createDiv({ cls: 'seelearn-heatmap-wrap' });
+    heatmapContainer.createEl('div', {
+      cls: 'seelearn-heatmap-title',
+      text: 'Активность повторений за последние 5 недель',
+    });
+    const heatmapGrid = heatmapContainer.createDiv({ cls: 'seelearn-heatmap-grid' });
+    const today = new Date();
+    for (let i = 34; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const count = streakStats.dailyActivity[dateStr] || 0;
+      let level = 0;
+      if (count > 0 && count <= 3) level = 1;
+      else if (count > 3 && count <= 10) level = 2;
+      else if (count > 10 && count <= 25) level = 3;
+      else if (count > 25) level = 4;
+
+      const cell = heatmapGrid.createDiv({ cls: `seelearn-heatmap-cell level-${level}` });
+      cell.setAttribute('title', `${dateStr}: ${count} повторений`);
+    }
+
+    // Leech warning banner (if any leeches in vault)
+    const leeches = this.plugin.cards.filter((c) =>
+      isCardLeech(this.plugin.storage.getProgress(c.id), this.plugin.settings.leechThreshold || 4)
+    );
+    if (leeches.length > 0) {
+      const leechBox = emptyBox.createDiv({ cls: 'seelearn-leech-notice' });
+      const leechNoticeText = leechBox.createSpan();
+      setIcon(leechNoticeText.createSpan({ cls: 'seelearn-icon-inline' }), 'zap');
+      leechNoticeText.createSpan({
+        text: ` Внимание: обнаружено ${leeches.length} карточек-пиявок (карты с частыми ошибками).`,
+      });
+      const studyLeechesBtn = leechBox.createEl('button', {
+        cls: 'seelearn-nav-btn mod-small',
+        text: 'Изучить пиявки',
+      });
+      studyLeechesBtn.addEventListener('click', () => {
+        this.sessionQueue = [...leeches];
+        this.sessionState = 'active';
+        this.currentIndex = 0;
+        this.isFlipped = false;
+        this.renderAll();
+      });
+    }
+
+    const actionsRow = emptyBox.createDiv({ cls: 'seelearn-summary-actions' });
+
+    const lobbyBtn = actionsRow.createEl('button', {
+      cls: 'seelearn-nav-btn',
+      text: 'Вернуться в лобби',
+    });
+    lobbyBtn.addEventListener('click', () => {
+      this.sessionState = 'lobby';
+      this.renderAll();
+    });
+
+    if (this.sessionStats.failedCards.length > 0) {
+      const repeatFailedBtn = actionsRow.createEl('button', {
+        cls: 'seelearn-nav-btn seelearn-btn-repeat',
+        text: `Повторить ошибки (${this.sessionStats.failedCards.length})`,
+      });
+      repeatFailedBtn.addEventListener('click', () => {
+        this.sessionQueue = [...this.sessionStats.failedCards];
+        this.sessionStats.failedCards = [];
+        this.sessionState = 'active';
+        this.currentIndex = 0;
+        this.isFlipped = false;
+        this.renderAll();
+      });
+    }
+
+    const restartBtn = actionsRow.createEl('button', {
+      cls: 'mod-cta',
+      text: 'Повторить всю сессию',
+    });
+    restartBtn.addEventListener('click', () => {
+      this.startSession();
+    });
+  }
+
+  /**
+   * Renders empty state when no cards exist in vault.
    */
   private renderEmptyState(): void {
     const emptyBox = this.cardAreaEl.createDiv({ cls: 'seelearn-empty-box' });
@@ -805,157 +1156,25 @@ topics:
 %% @end %%`,
       });
     } else {
-      // SESSION SUMMARY DASHBOARD
-      setIcon(emptyBox.createDiv({ cls: 'seelearn-empty-icon seelearn-icon-celebrate' }), 'award');
-      emptyBox.createEl('h2', { text: '🎉 Сессия завершена!' });
-      emptyBox.createEl('p', {
-        text: this.isTestMode()
-          ? 'Вы повторили запланированные карточки по графику интервального повторения.'
-          : 'Вы изучили все карточки в выбранной области.',
-      });
-
-      const statsGrid = emptyBox.createDiv({ cls: 'seelearn-stats-grid' });
-
-      const item1 = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
-      item1.createDiv({ cls: 'seelearn-stat-val', text: `${this.sessionStats.totalReviewed}` });
-      item1.createDiv({ cls: 'seelearn-stat-lbl', text: 'Пройдено карточек' });
-
-      if (this.isTestMode()) {
-        const successes = this.sessionStats.goodCount + this.sessionStats.easyCount;
-        const totalAnswers = successes + this.sessionStats.hardCount + this.sessionStats.againCount;
-        const successRate = totalAnswers > 0 ? Math.round((successes / totalAnswers) * 100) : 100;
-
-        const item2 = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
-        item2.createDiv({ cls: 'seelearn-stat-val', text: `${successRate}%` });
-        item2.createDiv({ cls: 'seelearn-stat-lbl', text: 'Успешность (Good/Easy)' });
-
-        const item3 = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
-        item3.createDiv({ cls: 'seelearn-stat-val', text: `${this.sessionStats.againCount}` });
-        item3.createDiv({ cls: 'seelearn-stat-lbl', text: 'Забываний (Снова)' });
-      }
-
-      // Streak Stats Banner
-      const streakStats = this.plugin.storage.getStudyStreakStats();
-      const streakBanner = emptyBox.createDiv({ cls: 'seelearn-streak-banner' });
-      streakBanner.createDiv({
-        cls: 'seelearn-streak-pill',
-        text: `🔥 Стрик: ${streakStats.currentStreak} дн.`,
-        title: `Текущая непрерывная серия: ${streakStats.currentStreak} дней подряд`,
-      });
-      streakBanner.createDiv({
-        cls: 'seelearn-streak-pill',
-        text: `🏆 Рекорд: ${streakStats.bestStreak} дн.`,
-        title: `Рекордная серия: ${streakStats.bestStreak} дней подряд`,
-      });
-      streakBanner.createDiv({
-        cls: 'seelearn-streak-pill',
-        text: `📚 Всего: ${streakStats.totalReviews} повторений`,
-        title: `Всего повторений карточек за все время: ${streakStats.totalReviews}`,
-      });
-
-      // 35-Day (5-week) Activity Heatmap
-      const heatmapContainer = emptyBox.createDiv({ cls: 'seelearn-heatmap-wrap' });
-      heatmapContainer.createEl('div', {
-        cls: 'seelearn-heatmap-title',
-        text: 'Активность повторений за последние 5 недель',
-      });
-      const heatmapGrid = heatmapContainer.createDiv({ cls: 'seelearn-heatmap-grid' });
-      const today = new Date();
-      for (let i = 34; i >= 0; i--) {
-        const d = new Date(today);
-        d.setDate(d.getDate() - i);
-        const dateStr = d.toISOString().split('T')[0];
-        const count = streakStats.dailyActivity[dateStr] || 0;
-        let level = 0;
-        if (count > 0 && count <= 3) level = 1;
-        else if (count > 3 && count <= 10) level = 2;
-        else if (count > 10 && count <= 25) level = 3;
-        else if (count > 25) level = 4;
-
-        const cell = heatmapGrid.createDiv({ cls: `seelearn-heatmap-cell level-${level}` });
-        cell.setAttribute('title', `${dateStr}: ${count} повторений`);
-      }
-
-      // Leech warning banner (if any leeches in vault)
-      const leeches = this.plugin.cards.filter((c) =>
-        isCardLeech(this.plugin.storage.getProgress(c.id), this.plugin.settings.leechThreshold || 4)
-      );
-      if (leeches.length > 0) {
-        const leechBox = emptyBox.createDiv({ cls: 'seelearn-leech-notice' });
-        leechBox.createSpan({
-          text: `⚡ Внимание: обнаружено ${leeches.length} карточек-пиявок (карты с частыми ошибками).`,
-        });
-        const studyLeechesBtn = leechBox.createEl('button', {
-          cls: 'seelearn-nav-btn mod-small',
-          text: 'Изучить пиявки',
-        });
-        studyLeechesBtn.addEventListener('click', () => {
-          this.sessionQueue = [...leeches];
-          this.currentIndex = 0;
-          this.isFlipped = false;
-          this.renderAll();
-        });
-      }
-
-      const actionsRow = emptyBox.createDiv({ cls: 'seelearn-summary-actions' });
-
-      const restartBtn = actionsRow.createEl('button', {
-        cls: 'mod-cta',
-        text: 'Повторить сессию снова',
-      });
-      restartBtn.addEventListener('click', () => {
-        this.sessionStats = {
-          totalReviewed: 0,
-          againCount: 0,
-          hardCount: 0,
-          goodCount: 0,
-          easyCount: 0,
-          failedCards: [],
-        };
-        this.resetSession();
-      });
-
-      if (this.sessionStats.failedCards.length > 0) {
-        const repeatFailedBtn = actionsRow.createEl('button', {
-          cls: 'seelearn-nav-btn seelearn-btn-repeat',
-          text: `Повторить с ошибками (${this.sessionStats.failedCards.length})`,
-        });
-        repeatFailedBtn.addEventListener('click', () => {
-          this.sessionQueue = [...this.sessionStats.failedCards];
-          this.sessionStats.failedCards = [];
-          this.currentIndex = 0;
-          this.isFlipped = false;
-          this.renderAll();
-        });
-      }
+      this.renderFinishedState();
     }
   }
 
   /**
-   * Renders the bottom navigation bar with Learn Mode navigation, SRS ratings, and Undo button.
+   * Renders the bottom navigation bar with Learn Mode navigation and SRS ratings.
    */
   private renderNavBar(): void {
     this.navBarEl.empty();
 
-    const hasCards = this.sessionQueue.length > 0;
-    const isFirst = this.currentIndex === 0;
-    const isLast = this.currentIndex >= this.sessionQueue.length - 1;
+    if (this.sessionState !== 'active' || this.sessionQueue.length === 0) {
+      this.navBarEl.style.display = 'none';
+      return;
+    }
+    this.navBarEl.style.display = 'flex';
+
     const currentCard = this.sessionQueue[this.currentIndex];
-
-    const leftNav = this.navBarEl.createDiv({ cls: 'seelearn-nav-group left' });
     const centerNav = this.navBarEl.createDiv({ cls: 'seelearn-nav-group center' });
-    const rightNav = this.navBarEl.createDiv({ cls: 'seelearn-nav-group right' });
 
-    // Left Navigation: Previous Card
-    const prevBtn = leftNav.createEl('button', {
-      cls: 'seelearn-nav-btn',
-      text: '← Назад',
-      title: 'Предыдущая карточка (ArrowLeft)',
-    });
-    prevBtn.disabled = !hasCards || isFirst;
-    prevBtn.addEventListener('click', () => this.prevCard());
-
-    // Center Controls: Dependent on Mode and Card Type
     if (!this.isTestMode()) {
       // LEARN MODE (Режим "Ботать" по умолчанию)
       if (currentCard?.hasBack) {
@@ -965,26 +1184,16 @@ topics:
           text: flipText,
           title: 'Перевернуть карточку (Space)',
         });
-        flipBtn.disabled = !hasCards;
         flipBtn.addEventListener('click', () => this.flipCard());
       }
-
-      const nextBtn = centerNav.createEl('button', {
-        cls: 'seelearn-nav-btn',
-        text: 'Далее →',
-        title: 'Следующая карточка (ArrowRight / Space)',
-      });
-      nextBtn.disabled = !hasCards || isLast;
-      nextBtn.addEventListener('click', () => this.nextCard());
     } else {
       // TEST MODE (Режим "Проверить знания" с SM-2)
       if (!currentCard?.hasBack) {
         // Front-only info card in test mode
         const readBtn = centerNav.createEl('button', {
           cls: 'seelearn-nav-btn mod-cta',
-          text: 'Понятно / Изучено ✓ (Space)',
+          text: 'Понятно / Изучено (Space)',
         });
-        readBtn.disabled = !hasCards;
         readBtn.addEventListener('click', () => this.handleSRSRating('good'));
       } else if (!this.isFlipped) {
         // Front of two-sided card in test mode
@@ -993,16 +1202,7 @@ topics:
           text: 'Показать ответ (Space)',
           title: 'Перевернуть карточку (Space)',
         });
-        flipBtn.disabled = !hasCards;
         flipBtn.addEventListener('click', () => this.flipCard());
-
-        const nextBtn = centerNav.createEl('button', {
-          cls: 'seelearn-nav-btn',
-          text: 'Далее →',
-          title: 'Следующая карточка (ArrowRight)',
-        });
-        nextBtn.disabled = !hasCards || isLast;
-        nextBtn.addEventListener('click', () => this.nextCard());
       } else {
         // Back of two-sided card: 4 SRS Rating Buttons with predicted intervals
         const record = currentCard ? this.plugin.storage.getProgress(currentCard.id) : undefined;
@@ -1026,9 +1226,9 @@ topics:
         hardBtn.createSpan({ cls: 'seelearn-srs-badge', text: previews.hard });
         hardBtn.addEventListener('click', () => this.handleSRSRating('hard'));
 
-        // [3] Хорошо
+        // [3] Хорошо (unify style, remove mod-cta)
         const goodBtn = centerNav.createEl('button', {
-          cls: 'seelearn-nav-btn seelearn-btn-srs seelearn-btn-good mod-cta',
+          cls: 'seelearn-nav-btn seelearn-btn-srs seelearn-btn-good',
           title: 'Уверенно вспомнил (клавиша 3)',
         });
         goodBtn.createSpan({ cls: 'seelearn-srs-title', text: '[3] Хорошо' });
@@ -1045,15 +1245,6 @@ topics:
         easyBtn.addEventListener('click', () => this.handleSRSRating('easy'));
       }
     }
-
-    // Right Controls: Undo Button
-    const undoBtn = rightNav.createEl('button', {
-      cls: 'seelearn-nav-btn seelearn-btn-undo',
-      text: '↶ Отмена',
-      title: 'Отменить последнее действие (Ctrl+Z / Cmd+Z)',
-    });
-    undoBtn.disabled = this.historyStack.length === 0;
-    undoBtn.addEventListener('click', () => this.undoLastAction());
   }
 
   // --- ACTIONS ---
@@ -1138,6 +1329,7 @@ topics:
     } else if (this.currentIndex === this.sessionQueue.length - 1) {
       // Finished all cards
       this.sessionStats.totalReviewed++;
+      this.sessionState = 'finished';
       this.sessionQueue = [];
       this.renderAll();
     }
@@ -1193,6 +1385,12 @@ topics:
       this.sessionQueue.splice(this.currentIndex, 1);
     }
 
+    if (this.sessionQueue.length === 0) {
+      this.sessionState = 'finished';
+      this.renderAll();
+      return;
+    }
+
     if (this.currentIndex >= this.sessionQueue.length) {
       this.currentIndex = Math.max(0, this.sessionQueue.length - 1);
     }
@@ -1221,7 +1419,10 @@ topics:
   }
 
   private undoLastAction(): void {
-    if (this.historyStack.length === 0) return;
+    if (this.historyStack.length === 0) {
+      new Notice('Нет действий для отмены');
+      return;
+    }
 
     const last = this.historyStack.pop()!;
     this.sessionQueue = last.queueSnapshot;
@@ -1341,7 +1542,7 @@ class WarningsModal extends Modal {
 }
 
 /**
- * Modal for editing flashcard content directly in place without opening the markdown note.
+ * Modal for editing flashcard content directly in place with horizontal side-by-side layout.
  */
 class QuickEditCardModal extends Modal {
   private card: Flashcard;
@@ -1356,35 +1557,66 @@ class QuickEditCardModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl('h2', { text: 'Быстрое редактирование карточки' });
-    contentEl.createEl('p', {
-      cls: 'seelearn-edit-subtitle',
+    contentEl.addClass('seelearn-modal-wide');
+
+    // Header with Title and Metadata
+    const headerEl = contentEl.createDiv({ cls: 'seelearn-modal-header' });
+    const titleRow = headerEl.createDiv({ cls: 'seelearn-modal-title-row' });
+    const titleIcon = titleRow.createSpan({ cls: 'seelearn-icon-inline' });
+    setIcon(titleIcon, 'file-edit');
+    titleRow.createEl('h2', { text: 'Редактирование карточки' });
+
+    // Metadata bar: file, lines, tags
+    const metaBar = headerEl.createDiv({ cls: 'seelearn-modal-meta' });
+    const fileMeta = metaBar.createSpan({ cls: 'seelearn-meta-item' });
+    setIcon(fileMeta.createSpan({ cls: 'seelearn-icon-inline' }), 'file-text');
+    fileMeta.createSpan({
       text: `${this.card.filePath} (строки ${this.card.lineStart}-${this.card.lineEnd})`,
     });
 
-    contentEl.createEl('label', { text: 'Вопрос / Лицевая сторона (@front):' });
-    const frontArea = contentEl.createEl('textarea', {
+    if (this.card.tags.length > 0) {
+      const tagsMeta = metaBar.createDiv({ cls: 'seelearn-modal-tags' });
+      for (const t of this.card.tags) {
+        tagsMeta.createSpan({ cls: 'seelearn-card-tag-pill', text: `#${t}` });
+      }
+    }
+
+    // Grid layout: Side-by-side if hasBack, single column if front-only
+    const gridEl = contentEl.createDiv({
+      cls: `seelearn-edit-grid ${this.card.hasBack ? 'two-col' : 'single-col'}`,
+    });
+
+    // Column 1: Front
+    const frontCol = gridEl.createDiv({ cls: 'seelearn-edit-col' });
+    frontCol.createEl('label', {
+      cls: 'seelearn-edit-label',
+      text: 'Лицевая сторона (@front):',
+    });
+    const frontArea = frontCol.createEl('textarea', {
       cls: 'seelearn-edit-textarea',
       value: this.card.front,
     });
-    frontArea.rows = 6;
 
+    // Column 2: Back (if card has back)
     let backArea: HTMLTextAreaElement | null = null;
     if (this.card.hasBack) {
-      contentEl.createEl('label', { text: 'Ответ / Оборотная сторона (@back):' });
-      backArea = contentEl.createEl('textarea', {
+      const backCol = gridEl.createDiv({ cls: 'seelearn-edit-col' });
+      backCol.createEl('label', {
+        cls: 'seelearn-edit-label',
+        text: 'Оборотная сторона (@back):',
+      });
+      backArea = backCol.createEl('textarea', {
         cls: 'seelearn-edit-textarea',
         value: this.card.back,
       });
-      backArea.rows = 6;
     }
 
+    // Actions Row
     const btnRow = contentEl.createDiv({ cls: 'seelearn-modal-actions' });
     const cancelBtn = btnRow.createEl('button', { text: 'Отмена' });
     cancelBtn.addEventListener('click', () => this.close());
 
-    const saveBtn = btnRow.createEl('button', { cls: 'mod-cta', text: 'Сохранить изменения' });
-    saveBtn.addEventListener('click', async () => {
+    const doSave = async () => {
       const file = this.app.vault.getAbstractFileByPath(this.card.filePath);
       if (!(file instanceof TFile)) {
         new Notice('Файл карточки не найден на диске');
@@ -1437,7 +1669,27 @@ class QuickEditCardModal extends Modal {
       } catch (err) {
         new Notice(`Ошибка сохранения: ${err instanceof Error ? err.message : String(err)}`);
       }
+    };
+
+    const saveBtn = btnRow.createEl('button', {
+      cls: 'mod-cta',
+      text: 'Сохранить (Ctrl+Enter)',
     });
+    saveBtn.addEventListener('click', doSave);
+
+    // Hotkey: Ctrl+Enter / Cmd+Enter inside textareas saves immediately
+    const onKeydown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        doSave();
+      }
+    };
+    frontArea.addEventListener('keydown', onKeydown);
+    if (backArea) {
+      backArea.addEventListener('keydown', onKeydown);
+    }
+
+    setTimeout(() => frontArea.focus(), 50);
   }
 
   onClose(): void {

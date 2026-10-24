@@ -63,8 +63,8 @@ export class SeeLearnSettingTab extends PluginSettingTab {
       .setDesc('Выберите режим по умолчанию: «Ботать» (изучение и просмотр без оценок) или «Проверить знания» (SM-2 интервальное тестирование).')
       .addDropdown((dropdown) =>
         dropdown
-          .addOption('learn', '📖 Ботать (Изучение и чтение карточек без оценок - по умолчанию)')
-          .addOption('test', '🎯 Проверить знания (Интервальное повторение SM-2, оценки 1-4)')
+          .addOption('learn', 'Ботать (Изучение и чтение карточек без оценок - по умолчанию)')
+          .addOption('test', 'Проверить знания (Интервальное повторение SM-2, оценки 1-4)')
           .addOption('srs', 'SM-2 Интервальное повторение (классический режим)')
           .addOption('cram', 'Свободная зубрежка (Cram Mode: Повторить позже / Знаю)')
           .setValue(this.plugin.settings.studyMode)
