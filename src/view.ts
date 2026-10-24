@@ -11,6 +11,7 @@ import {
 } from 'obsidian';
 import type SeeLearnPlugin from './main';
 import { Flashcard, ValidationWarning } from './types';
+import { fisherYatesShuffle, interleaveCards } from './shuffle';
 
 export const VIEW_TYPE_SEELEARN = 'seelearn-study-view';
 
@@ -104,7 +105,14 @@ export class StudyView extends ItemView {
    * Resets the session queue according to currently active filters.
    */
   public resetSession(keepIndex = false): void {
-    const filtered = this.getFilteredCards();
+    let filtered = this.getFilteredCards();
+
+    if (this.plugin.settings.shuffleOnStart) {
+      filtered = this.plugin.settings.interleaveTopics
+        ? interleaveCards(filtered)
+        : fisherYatesShuffle(filtered);
+    }
+
     this.sessionQueue = [...filtered];
 
     if (!keepIndex || this.currentIndex >= this.sessionQueue.length) {
@@ -114,6 +122,7 @@ export class StudyView extends ItemView {
 
     this.renderAll();
   }
+
 
   /**
    * Refreshes the view when plugin index is updated.
@@ -331,12 +340,29 @@ export class StudyView extends ItemView {
     const cardHeader = cardContainer.createDiv({ cls: 'seelearn-card-header' });
 
     const headerLeft = cardHeader.createDiv({ cls: 'seelearn-header-left' });
+
+    // Progress badge from data.json
+    const progress = this.plugin.storage.getProgress(card.id);
+    const progressPill = headerLeft.createSpan({ cls: 'seelearn-progress-pill' });
+    if (progress && progress.repetitions > 0) {
+      progressPill.setText(`Повтор #${progress.repetitions} (${progress.interval} дн.)`);
+      progressPill.addClass('is-learned');
+      progressPill.setAttribute(
+        'title',
+        `Фактор легкости: ${progress.easeFactor.toFixed(2)}, Забываний: ${progress.lapses}`
+      );
+    } else {
+      progressPill.setText('Новая карта');
+      progressPill.addClass('is-new');
+    }
+
     if (card.tags.length > 0) {
       const tagsContainer = headerLeft.createDiv({ cls: 'seelearn-card-tags' });
       for (const tag of card.tags) {
         tagsContainer.createSpan({ cls: 'seelearn-card-tag-pill', text: `#${tag}` });
       }
     }
+
 
     const headerRight = cardHeader.createDiv({ cls: 'seelearn-header-right' });
 
@@ -576,21 +602,35 @@ topics:
     if (this.sessionQueue.length === 0) return;
 
     const card = this.sessionQueue[this.currentIndex];
-    // Move current card to the end of the queue
+
+    // Record review in storage
+    this.plugin.storage.recordReview(card.id, 'repeat');
+
+    // Remove current card from queue
     this.sessionQueue.splice(this.currentIndex, 1);
-    this.sessionQueue.push(card);
+
+    // Re-insert card after requeueStep cards or at the end
+    const step = Math.max(1, this.plugin.settings.requeueStep || 3);
+    const insertAt = Math.min(this.sessionQueue.length, this.currentIndex + step);
+    this.sessionQueue.splice(insertAt, 0, card);
 
     if (this.currentIndex >= this.sessionQueue.length) {
       this.currentIndex = Math.max(0, this.sessionQueue.length - 1);
     }
 
     this.isFlipped = false;
-    new Notice('Карточка отложена в конец очереди');
+    const delta = insertAt - this.currentIndex;
+    new Notice(`Карточка отложена (появится через ${delta} ${delta === 1 ? 'карту' : 'карты'})`);
     this.renderAll();
   }
 
   private markKnown(): void {
     if (this.sessionQueue.length === 0) return;
+
+    const card = this.sessionQueue[this.currentIndex];
+
+    // Record review in storage
+    const record = this.plugin.storage.recordReview(card.id, 'know');
 
     // Remove card from current session
     this.sessionQueue.splice(this.currentIndex, 1);
@@ -600,26 +640,27 @@ topics:
     }
 
     this.isFlipped = false;
-    new Notice('Карточка освоена!');
+    new Notice(`Карточка освоена! (Интервал: ${record.interval} дн.)`);
     this.renderAll();
   }
 
   private shuffleQueue(): void {
     if (this.sessionQueue.length <= 1) return;
 
-    for (let i = this.sessionQueue.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [this.sessionQueue[i], this.sessionQueue[j]] = [
-        this.sessionQueue[j],
-        this.sessionQueue[i],
-      ];
-    }
+    this.sessionQueue = this.plugin.settings.interleaveTopics
+      ? interleaveCards(this.sessionQueue)
+      : fisherYatesShuffle(this.sessionQueue);
 
     this.currentIndex = 0;
     this.isFlipped = false;
-    new Notice('Колода перемешана');
+    new Notice(
+      this.plugin.settings.interleaveTopics
+        ? 'Колода перемешана (с чередованием тем)'
+        : 'Колода перемешана (Фишер-Йетс)'
+    );
     this.renderAll();
   }
+
 
   private async openCardInNote(card: Flashcard): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(card.filePath);

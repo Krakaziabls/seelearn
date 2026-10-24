@@ -1,11 +1,21 @@
 import { MetadataCache, TFile } from 'obsidian';
 import { Flashcard, ParsedFileResult, SeeLearnSettings, ValidationWarning } from './types';
+import { generateCardId, normalizeCardContent } from './hash';
 
 export type MarkerType = 'card' | 'front' | 'back' | 'end';
 
 export interface MarkerMatch {
   type: MarkerType;
   args?: string;
+}
+
+/**
+ * Extracts an explicit custom ID from card header arguments (e.g. id::my-card).
+ */
+export function extractCustomId(args?: string): string | undefined {
+  if (!args) return undefined;
+  const match = args.match(/(?:^|\s)id::([^\s#%]+)/i);
+  return match ? match[1].trim() : undefined;
 }
 
 /**
@@ -191,6 +201,7 @@ export function parseCardsFromMarkdown(
   const lines = content.split(/\r?\n/);
   const cards: Flashcard[] = [];
   const warnings: ValidationWarning[] = [];
+  const contentOccurrences = new Map<string, number>();
 
   let inCard = false;
   let cardStartLine = 0;
@@ -316,9 +327,17 @@ export function parseCardsFromMarkdown(
 
             const frontContent = frontLines.join('\n').trim();
             const backContent = backLines.join('\n').trim();
+            const customId = extractCustomId(cardArgs);
+
+            const normFront = normalizeCardContent(frontContent);
+            const occurrence = contentOccurrences.get(normFront) || 0;
+            contentOccurrences.set(normFront, occurrence + 1);
+
+            const cardId = generateCardId(filePath, frontContent, customId, occurrence);
 
             cards.push({
-              id: `${filePath}#L${cardStartLine}`,
+              id: cardId,
+              customId,
               filePath,
               fileName,
               lineStart: cardStartLine,

@@ -3,16 +3,20 @@ import { DEFAULT_SETTINGS, Flashcard, SeeLearnSettings, ValidationWarning } from
 import { SeeLearnSettingTab } from './settings';
 import { extractGlobalTopics, parseCardsFromMarkdown, shouldIndexFile } from './parser';
 import { StudyView, VIEW_TYPE_SEELEARN } from './view';
+import { StorageManager } from './storage';
 
 export default class SeeLearnPlugin extends Plugin {
   settings: SeeLearnSettings = DEFAULT_SETTINGS;
+  storage!: StorageManager;
   cards: Flashcard[] = [];
   warnings: ValidationWarning[] = [];
 
   private reloadTimeoutId: number | null = null;
 
   async onload(): Promise<void> {
-    await this.loadSettings();
+    this.storage = new StorageManager(this);
+    await this.storage.load();
+    this.settings = this.storage.settings;
 
     // Register custom ItemView
     this.registerView(
@@ -61,19 +65,20 @@ export default class SeeLearnPlugin extends Plugin {
   }
 
   onunload(): void {
+    if (this.storage) {
+      this.storage.cleanup();
+    }
     if (this.reloadTimeoutId !== null) {
       window.clearTimeout(this.reloadTimeoutId);
       this.reloadTimeoutId = null;
     }
   }
 
-  async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+  async saveSettings(): Promise<void> {
+    this.storage.settings = this.settings;
+    await this.storage.saveNow();
   }
 
-  async saveSettings(): Promise<void> {
-    await this.saveData(this.settings);
-  }
 
   /**
    * Opens or reveals the SeeLearn study view.

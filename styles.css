@@ -209,6 +209,27 @@
   flex-wrap: wrap;
 }
 
+.seelearn-progress-pill {
+  font-size: 0.76em;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+}
+
+.seelearn-progress-pill.is-new {
+  background-color: var(--background-primary);
+  color: var(--text-faint);
+  border: 1px dashed var(--background-modifier-border);
+}
+
+.seelearn-progress-pill.is-learned {
+  background-color: rgba(16, 185, 129, 0.12);
+  color: var(--color-green, #10b981);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
 .seelearn-card-tags {
   display: flex;
   gap: 5px;
@@ -223,6 +244,7 @@
   color: var(--tag-color, var(--text-accent));
   font-weight: 500;
 }
+
 
 .seelearn-header-right {
   display: flex;

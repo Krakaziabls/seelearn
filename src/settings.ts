@@ -84,6 +84,54 @@ export class SeeLearnSettingTab extends PluginSettingTab {
           })
       );
 
+    containerEl.createEl('h3', { text: 'Управление сессией и тасование' });
+
+    new Setting(containerEl)
+      .setName('Перемешивать карточки в начале сессии')
+      .setDesc('Автоматически перемешивать очередь при запуске или смене фильтра по алгоритму Фишера-Йетса.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.shuffleOnStart)
+          .onChange(async (value) => {
+            this.plugin.settings.shuffleOnStart = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Чередование тем (Topic Interleaving)')
+      .setDesc('Предотвращать скопление карточек одной темы подряд при перемешивании.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.interleaveTopics)
+          .onChange(async (value) => {
+            this.plugin.settings.interleaveTopics = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Шаг повтора отложенной карты (Requeue Step)')
+      .setDesc('Через сколько карточек возвращать отложенную карту при нажатии «Повторить позже» (по умолчанию: 3).')
+      .addSlider((slider) =>
+        slider
+          .setLimits(1, 10, 1)
+          .setValue(this.plugin.settings.requeueStep)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            this.plugin.settings.requeueStep = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    containerEl.createEl('h3', { text: 'Хранилище данных и статистика' });
+
+    const stats = this.plugin.storage.getStats();
+    const statsDesc = `Всего отслеживаемых карточек: ${stats.totalTracked} | Повторено сегодня: ${stats.reviewedToday} | Забываний (Lapses): ${stats.totalLapses}`;
+    new Setting(containerEl)
+      .setName('Статистика прогресса (data.json)')
+      .setDesc(statsDesc);
+
     new Setting(containerEl)
       .setName('Принудительное переиндексирование')
       .setDesc('Заново просканировать все файлы хранилища и обновить колоду карточек.')
@@ -97,3 +145,4 @@ export class SeeLearnSettingTab extends PluginSettingTab {
       );
   }
 }
+

@@ -7,8 +7,17 @@ if (!fs.existsSync('scratch')) {
   fs.mkdirSync('scratch', { recursive: true });
 }
 
+const testFiles = fs
+  .readdirSync('tests')
+  .filter((f) => f.endsWith('.test.ts'))
+  .map((f) => path.join('tests', f));
+
+// Generate a test runner bundle
+const runnerContent = testFiles.map((f) => `import '../${f.replace(/\\/g, '/')}';`).join('\n');
+fs.writeFileSync('scratch/runner.ts', runnerContent);
+
 await esbuild.build({
-  entryPoints: ['tests/parser.test.ts'],
+  entryPoints: ['scratch/runner.ts'],
   bundle: true,
   platform: 'node',
   external: ['obsidian'],
