@@ -1,7 +1,7 @@
 import { MetadataCache, TFile } from 'obsidian';
 import { Flashcard, ParsedFileResult, SeeLearnSettings, ValidationWarning } from './types';
 import { generateCardId, normalizeCardContent } from './hash';
-import { hasClozeDeletions, renderClozeBack, renderClozeFront } from './cloze';
+import { getClozeIndices, hasClozeDeletions, renderClozeBack, renderClozeFront } from './cloze';
 
 export type MarkerType = 'card' | 'front' | 'back' | 'end';
 
@@ -331,41 +331,90 @@ export function parseCardsFromMarkdown(
             const customId = extractCustomId(cardArgs);
 
             const isCloze = hasClozeDeletions(rawFrontContent);
-            let frontContent = rawFrontContent;
-            let backContent = rawBackContent;
-            let hasBack = backCount === 1 && rawBackContent.length > 0;
+            const clozeIndices = isCloze ? getClozeIndices(rawFrontContent) : [];
 
-            if (isCloze) {
-              frontContent = renderClozeFront(rawFrontContent);
-              if (!hasBack) {
-                backContent = renderClozeBack(rawFrontContent);
-                hasBack = true;
-              } else {
-                backContent = `${renderClozeBack(rawFrontContent)}\n\n${rawBackContent}`;
+            if (isCloze && clozeIndices.length > 1) {
+              // Multi-cloze card: split into multiple virtual cards (c1, c2, ...)
+              for (const idx of clozeIndices) {
+                const frontContent = renderClozeFront(rawFrontContent, idx);
+                let backContent = rawBackContent;
+                let hasBack = backCount === 1 && rawBackContent.length > 0;
+
+                if (!hasBack) {
+                  backContent = renderClozeBack(rawFrontContent, idx);
+                  hasBack = true;
+                } else {
+                  backContent = `${renderClozeBack(rawFrontContent, idx)}\n\n${rawBackContent}`;
+                }
+
+                const normFront = normalizeCardContent(`${rawFrontContent}_c${idx}`);
+                const occurrence = contentOccurrences.get(normFront) || 0;
+                contentOccurrences.set(normFront, occurrence + 1);
+
+                const baseCustomId = customId ? `${customId}_c${idx}` : undefined;
+                const cardId = generateCardId(filePath, `${rawFrontContent}_c${idx}`, baseCustomId, occurrence);
+
+                const clozeTag = `c${idx}`;
+                const cardLocalTags = localTags.includes(clozeTag) ? localTags : [...localTags, clozeTag];
+                const cardMergedTags = Array.from(new Set([...globalTopics, ...cardLocalTags]));
+
+                cards.push({
+                  id: cardId,
+                  customId: baseCustomId,
+                  filePath,
+                  fileName,
+                  lineStart: cardStartLine,
+                  lineEnd: lineNumber,
+                  front: frontContent,
+                  back: backContent,
+                  hasBack,
+                  isCloze: true,
+                  clozeIndex: idx,
+                  tags: cardMergedTags,
+                  globalTopics,
+                  localTags: cardLocalTags,
+                });
               }
+            } else {
+              // Single cloze or regular card
+              let frontContent = rawFrontContent;
+              let backContent = rawBackContent;
+              let hasBack = backCount === 1 && rawBackContent.length > 0;
+
+              const targetIdx = clozeIndices[0] || 1;
+              if (isCloze) {
+                frontContent = renderClozeFront(rawFrontContent, targetIdx);
+                if (!hasBack) {
+                  backContent = renderClozeBack(rawFrontContent, targetIdx);
+                  hasBack = true;
+                } else {
+                  backContent = `${renderClozeBack(rawFrontContent, targetIdx)}\n\n${rawBackContent}`;
+                }
+              }
+
+              const normFront = normalizeCardContent(rawFrontContent);
+              const occurrence = contentOccurrences.get(normFront) || 0;
+              contentOccurrences.set(normFront, occurrence + 1);
+
+              const cardId = generateCardId(filePath, rawFrontContent, customId, occurrence);
+
+              cards.push({
+                id: cardId,
+                customId,
+                filePath,
+                fileName,
+                lineStart: cardStartLine,
+                lineEnd: lineNumber,
+                front: frontContent,
+                back: backContent,
+                hasBack,
+                isCloze,
+                clozeIndex: isCloze ? targetIdx : undefined,
+                tags: mergedTags,
+                globalTopics,
+                localTags,
+              });
             }
-
-            const normFront = normalizeCardContent(rawFrontContent);
-            const occurrence = contentOccurrences.get(normFront) || 0;
-            contentOccurrences.set(normFront, occurrence + 1);
-
-            const cardId = generateCardId(filePath, rawFrontContent, customId, occurrence);
-
-            cards.push({
-              id: cardId,
-              customId,
-              filePath,
-              fileName,
-              lineStart: cardStartLine,
-              lineEnd: lineNumber,
-              front: frontContent,
-              back: backContent,
-              hasBack,
-              isCloze,
-              tags: mergedTags,
-              globalTopics,
-              localTags,
-            });
           }
 
 

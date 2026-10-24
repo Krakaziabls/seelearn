@@ -1,6 +1,6 @@
 {
   "name": "obsidian-seelearn",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Interactive flashcards for Obsidian with native markdown rendering and topic inheritance.",
   "main": "main.js",
   "scripts": {

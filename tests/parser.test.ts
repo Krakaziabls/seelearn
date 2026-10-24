@@ -273,5 +273,37 @@ HTTP error ==404== means Not Found.
   assert.ok(c2.back.includes('<span class="seelearn-cloze-revealed">404</span>'));
 });
 
+test('parseCardsFromMarkdown splits multi-cloze cards into virtual cards c1 and c2 with distinct IDs and tags', () => {
+  const md = `
+%% @card #geography %%
+%% @front %%
+The capital of {{c1::France}} is {{c2::Paris}}.
+%% @end %%
+`;
+
+  const result = parseCardsFromMarkdown('notes/geo.md', 'geo.md', md, []);
+  assert.strictEqual(result.cards.length, 2);
+  assert.strictEqual(result.warnings.length, 0);
+
+  const card1 = result.cards[0];
+  assert.strictEqual(card1.isCloze, true);
+  assert.strictEqual(card1.clozeIndex, 1);
+  assert.ok(card1.front.includes('<span class="seelearn-cloze-target">[...]</span>'));
+  assert.ok(card1.front.includes('is Paris.'));
+  assert.ok(card1.back.includes('<span class="seelearn-cloze-revealed">France</span>'));
+  assert.ok(card1.tags.includes('c1'));
+
+  const card2 = result.cards[1];
+  assert.strictEqual(card2.isCloze, true);
+  assert.strictEqual(card2.clozeIndex, 2);
+  assert.ok(card2.front.includes('The capital of France is'));
+  assert.ok(card2.front.includes('<span class="seelearn-cloze-target">[...]</span>'));
+  assert.ok(card2.back.includes('<span class="seelearn-cloze-revealed">Paris</span>'));
+  assert.ok(card2.tags.includes('c2'));
+
+  assert.notStrictEqual(card1.id, card2.id);
+});
+
+
 
 

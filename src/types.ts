@@ -86,6 +86,7 @@ export interface Flashcard {
   back: string;
   hasBack: boolean; // false for front-only info cards
   isCloze: boolean;
+  clozeIndex?: number;
   tags: string[];
   globalTopics: string[];
   localTags: string[];

@@ -36,8 +36,112 @@ export default class SeeLearnPlugin extends Plugin {
     // Add command to palette
     this.addCommand({
       id: 'open-study-view',
-      name: 'Open SeeLearn Study View',
+      name: 'Открыть панель карточек (Open SeeLearn Study View)',
       callback: () => this.activateView(),
+    });
+
+    this.addCommand({
+      id: 'flip-card',
+      name: 'Показать ответ / Перевернуть карточку (Flip Card)',
+      checkCallback: (checking: boolean) => {
+        const view = this.getActiveStudyView();
+        if (view) {
+          if (!checking) view.flipCardAction();
+          return true;
+        }
+        return false;
+      },
+    });
+
+    this.addCommand({
+      id: 'next-card',
+      name: 'Следующая карточка (Next Card)',
+      checkCallback: (checking: boolean) => {
+        const view = this.getActiveStudyView();
+        if (view && view.isSessionActive()) {
+          if (!checking) view.nextCardAction();
+          return true;
+        }
+        return false;
+      },
+    });
+
+    this.addCommand({
+      id: 'prev-card',
+      name: 'Предыдущая карточка (Previous Card)',
+      checkCallback: (checking: boolean) => {
+        const view = this.getActiveStudyView();
+        if (view && view.isSessionActive()) {
+          if (!checking) view.prevCardAction();
+          return true;
+        }
+        return false;
+      },
+    });
+
+    this.addCommand({
+      id: 'rate-again',
+      name: 'Оценка SRS: [1] Снова (Again)',
+      checkCallback: (checking: boolean) => {
+        const view = this.getActiveStudyView();
+        if (view && view.isSessionActive()) {
+          if (!checking) view.rateAgainAction();
+          return true;
+        }
+        return false;
+      },
+    });
+
+    this.addCommand({
+      id: 'rate-hard',
+      name: 'Оценка SRS: [2] Трудно (Hard)',
+      checkCallback: (checking: boolean) => {
+        const view = this.getActiveStudyView();
+        if (view && view.isSessionActive()) {
+          if (!checking) view.rateHardAction();
+          return true;
+        }
+        return false;
+      },
+    });
+
+    this.addCommand({
+      id: 'rate-good',
+      name: 'Оценка SRS: [3] Хорошо (Good)',
+      checkCallback: (checking: boolean) => {
+        const view = this.getActiveStudyView();
+        if (view && view.isSessionActive()) {
+          if (!checking) view.rateGoodAction();
+          return true;
+        }
+        return false;
+      },
+    });
+
+    this.addCommand({
+      id: 'rate-easy',
+      name: 'Оценка SRS: [4] Легко (Easy)',
+      checkCallback: (checking: boolean) => {
+        const view = this.getActiveStudyView();
+        if (view && view.isSessionActive()) {
+          if (!checking) view.rateEasyAction();
+          return true;
+        }
+        return false;
+      },
+    });
+
+    this.addCommand({
+      id: 'undo-review',
+      name: 'Отменить последнее действие (Undo)',
+      checkCallback: (checking: boolean) => {
+        const view = this.getActiveStudyView();
+        if (view && view.isSessionActive()) {
+          if (!checking) view.undoAction();
+          return true;
+        }
+        return false;
+      },
     });
 
     // Add settings tab
@@ -114,6 +218,20 @@ export default class SeeLearnPlugin extends Plugin {
     if (leaf) {
       workspace.revealLeaf(leaf);
     }
+  }
+
+  /**
+   * Retrieves the active or open StudyView instance, if any.
+   */
+  getActiveStudyView(): StudyView | null {
+    const activeView = this.app.workspace.getActiveViewOfType(StudyView);
+    if (activeView) return activeView;
+
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_SEELEARN);
+    if (leaves.length > 0 && leaves[0].view instanceof StudyView) {
+      return leaves[0].view as StudyView;
+    }
+    return null;
   }
 
   private rebuildCardsFromMap(): void {

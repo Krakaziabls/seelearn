@@ -158,6 +158,8 @@ export class StudyView extends ItemView {
       }
     });
 
+    this.registerTouchGestures();
+
     this.sessionState = 'lobby';
     this.resetSession();
   }
@@ -751,7 +753,8 @@ export class StudyView extends ItemView {
     if (card.isCloze) {
       const clozePill = headerLeft.createSpan({ cls: 'seelearn-progress-pill is-cloze' });
       setIcon(clozePill.createSpan({ cls: 'seelearn-icon-inline' }), 'scissors');
-      clozePill.createSpan({ text: ' КЛОУЗ' });
+      const label = card.clozeIndex ? ` КЛОУЗ (c${card.clozeIndex})` : ' КЛОУЗ';
+      clozePill.createSpan({ text: label });
       clozePill.setAttribute('title', 'Карточка с заполнением пропусков (Cloze Deletion)');
     }
 
@@ -1478,6 +1481,155 @@ topics:
       this.app.workspace.revealLeaf(leaf);
     } else {
       new Notice(`Файл не найден: ${card.filePath}`);
+    }
+  }
+
+  /**
+   * Registers touch gestures for mobile swipes (swipe up = flip, swipe left = next/again, swipe right = prev/good).
+   */
+  private registerTouchGestures(): void {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchEndX = 0;
+    let touchEndY = 0;
+    let touchStartTime = 0;
+    let isTouchInsideScrollable = false;
+
+    this.registerDomEvent(this.cardAreaEl, 'touchstart', (e: TouchEvent) => {
+      if (e.touches.length !== 1 || this.sessionState !== 'active') return;
+      const touch = e.touches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+      touchEndX = touch.clientX;
+      touchEndY = touch.clientY;
+      touchStartTime = Date.now();
+
+      const target = e.target as HTMLElement | null;
+      const scrollParent = target?.closest('table, pre, .seelearn-card-tags') as HTMLElement | null;
+      isTouchInsideScrollable = !!(
+        scrollParent && scrollParent.scrollWidth > scrollParent.clientWidth
+      );
+    }, { passive: true });
+
+    this.registerDomEvent(this.cardAreaEl, 'touchmove', (e: TouchEvent) => {
+      if (e.touches.length !== 1 || this.sessionState !== 'active') return;
+      const touch = e.touches[0];
+      touchEndX = touch.clientX;
+      touchEndY = touch.clientY;
+    }, { passive: true });
+
+    this.registerDomEvent(this.cardAreaEl, 'touchend', (_e: TouchEvent) => {
+      if (this.sessionState !== 'active' || this.sessionQueue.length === 0) return;
+
+      const elapsed = Date.now() - touchStartTime;
+      if (elapsed > 700) return; // Ignore long presses / slow drags
+
+      const deltaX = touchEndX - touchStartX;
+      const deltaY = touchEndY - touchStartY;
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+
+      const SWIPE_THRESHOLD = 55;
+
+      if (absX < SWIPE_THRESHOLD && absY < SWIPE_THRESHOLD) return;
+
+      if (absY > absX * 1.2) {
+        // Vertical swipe
+        if (deltaY < -SWIPE_THRESHOLD) {
+          // Swipe UP: Flip card or advance
+          if (!this.isFlipped) {
+            this.flipCard();
+          } else if (!this.isTestMode()) {
+            this.nextCard();
+          }
+        }
+      } else if (absX > absY * 1.2) {
+        // Horizontal swipe
+        if (isTouchInsideScrollable) return; // Prevent swipe if scrolling table horizontally
+
+        if (deltaX < -SWIPE_THRESHOLD) {
+          // Swipe LEFT: Next card / Again in test mode when flipped
+          if (this.isTestMode() && this.isFlipped) {
+            this.handleSRSRating('again');
+          } else {
+            this.nextCard();
+          }
+        } else if (deltaX > SWIPE_THRESHOLD) {
+          // Swipe RIGHT: Prev card / Good in test mode when flipped
+          if (this.isTestMode() && this.isFlipped) {
+            this.handleSRSRating('good');
+          } else {
+            this.prevCard();
+          }
+        }
+      }
+    }, { passive: true });
+  }
+
+  // --- PUBLIC ACTIONS FOR OBSIDIAN COMMANDS & HOTKEYS ---
+
+  public isSessionActive(): boolean {
+    return this.sessionState === 'active' && this.sessionQueue.length > 0;
+  }
+
+  public flipCardAction(): void {
+    if (this.sessionState === 'lobby') {
+      this.startSession();
+    } else if (this.sessionState === 'finished') {
+      this.sessionState = 'lobby';
+      this.resetSession();
+    } else if (this.sessionState === 'active') {
+      this.handleSpace();
+    }
+  }
+
+  public nextCardAction(): void {
+    if (this.sessionState === 'active') {
+      this.nextCard();
+    }
+  }
+
+  public prevCardAction(): void {
+    if (this.sessionState === 'active') {
+      this.prevCard();
+    }
+  }
+
+  public rateAgainAction(): void {
+    if (this.sessionState === 'active' && this.isTestMode() && this.isFlipped) {
+      this.handleSRSRating('again');
+    }
+  }
+
+  public rateHardAction(): void {
+    if (this.sessionState === 'active' && this.isTestMode() && this.isFlipped) {
+      this.handleSRSRating('hard');
+    }
+  }
+
+  public rateGoodAction(): void {
+    if (this.sessionState === 'active') {
+      if (this.isTestMode()) {
+        if (this.isFlipped || !this.sessionQueue[this.currentIndex]?.hasBack) {
+          this.handleSRSRating('good');
+        } else {
+          this.flipCard();
+        }
+      } else {
+        this.handleSpace();
+      }
+    }
+  }
+
+  public rateEasyAction(): void {
+    if (this.sessionState === 'active' && this.isTestMode() && this.isFlipped) {
+      this.handleSRSRating('easy');
+    }
+  }
+
+  public undoAction(): void {
+    if (this.sessionState === 'active') {
+      this.undoLastAction();
     }
   }
 
