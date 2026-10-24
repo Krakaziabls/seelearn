@@ -241,4 +241,37 @@ test('parseCardsFromMarkdown parses cards inside blockquotes and callouts', () =
   assert.ok(result.cards[0].back.includes('Sender blocks until receiver is ready.'));
 });
 
+test('parseCardsFromMarkdown parses cloze deletion cards with {{c1::answer}} and ==highlight==', () => {
+  const md = `
+%% @card #history %%
+%% @front %%
+The capital of France is {{c1::Paris::city}}.
+%% @end %%
+
+%% @card #web %%
+%% @front %%
+HTTP error ==404== means Not Found.
+%% @end %%
+`;
+
+  const result = parseCardsFromMarkdown('notes/test.md', 'test.md', md, []);
+  assert.strictEqual(result.cards.length, 2);
+  assert.strictEqual(result.warnings.length, 0);
+
+  // Card 1: Anki style cloze
+  const c1 = result.cards[0];
+  assert.strictEqual(c1.isCloze, true);
+  assert.strictEqual(c1.hasBack, true);
+  assert.ok(c1.front.includes('<span class="seelearn-cloze-target">[city]</span>'));
+  assert.ok(c1.back.includes('<span class="seelearn-cloze-revealed">Paris</span>'));
+
+  // Card 2: Highlight style cloze
+  const c2 = result.cards[1];
+  assert.strictEqual(c2.isCloze, true);
+  assert.strictEqual(c2.hasBack, true);
+  assert.ok(c2.front.includes('<span class="seelearn-cloze-target">[...]</span>'));
+  assert.ok(c2.back.includes('<span class="seelearn-cloze-revealed">404</span>'));
+});
+
+
 

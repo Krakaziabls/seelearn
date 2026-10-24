@@ -5,6 +5,7 @@ import {
   formatIntervalPreview,
   getSRSIntervalPreviews,
   isCardDue,
+  isCardLeech,
   isCardNew,
 } from '../src/srs';
 import { CardProgressRecord } from '../src/types';
@@ -120,3 +121,26 @@ test('isCardDue and isCardNew accurately reflect card state', () => {
   assert.strictEqual(isCardDue(dueCard, '2026-01-05'), true); // Overdue
   assert.strictEqual(isCardDue(dueCard, '2025-12-31'), false); // Not due yet
 });
+
+test('isCardLeech accurately flags cards exceeding lapse threshold', () => {
+  assert.strictEqual(isCardLeech(undefined), false);
+
+  const normalCard: CardProgressRecord = {
+    cardId: 'c1',
+    repetitions: 3,
+    interval: 10,
+    easeFactor: 2.3,
+    dueDate: '2026-02-01',
+    lastReviewed: '2026-01-20',
+    lapses: 2,
+  };
+  assert.strictEqual(isCardLeech(normalCard, 4), false);
+
+  const leechCard: CardProgressRecord = {
+    ...normalCard,
+    lapses: 4,
+  };
+  assert.strictEqual(isCardLeech(leechCard, 4), true);
+  assert.strictEqual(isCardLeech(leechCard, 5), false);
+});
+

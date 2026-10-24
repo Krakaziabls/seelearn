@@ -12,7 +12,7 @@ import {
 import type SeeLearnPlugin from './main';
 import { CardProgressRecord, Flashcard, SRSQueueFilter, ValidationWarning } from './types';
 import { fisherYatesShuffle, interleaveCards } from './shuffle';
-import { getSRSIntervalPreviews, isCardDue, isCardNew, SRSRating } from './srs';
+import { getSRSIntervalPreviews, isCardDue, isCardLeech, isCardNew, SRSRating } from './srs';
 
 export const VIEW_TYPE_SEELEARN = 'seelearn-study-view';
 
@@ -634,6 +634,24 @@ export class StudyView extends ItemView {
       progressPill.addClass('is-learn');
     }
 
+    // Leech badge (repeated lapses)
+    const isLeech = isCardLeech(progress, this.plugin.settings.leechThreshold || 4);
+    if (isLeech) {
+      const leechPill = headerLeft.createSpan({ cls: 'seelearn-progress-pill is-leech' });
+      leechPill.setText(`⚡ ПИЯВКА (${progress?.lapses} сбоев)`);
+      leechPill.setAttribute(
+        'title',
+        'Карточка вызывает частые ошибки. Рекомендуется переформулировать или разбить на простые факты.'
+      );
+    }
+
+    // Cloze Deletion badge
+    if (card.isCloze) {
+      const clozePill = headerLeft.createSpan({ cls: 'seelearn-progress-pill is-cloze' });
+      clozePill.setText('[...] КЛОУЗ');
+      clozePill.setAttribute('title', 'Карточка с заполнением пропусков (Cloze Deletion)');
+    }
+
     // Tags list container with overflow scroll
     if (card.tags.length > 0) {
       const tagsContainer = headerLeft.createDiv({ cls: 'seelearn-card-tags' });
@@ -643,6 +661,20 @@ export class StudyView extends ItemView {
     }
 
     const headerRight = cardHeader.createDiv({ cls: 'seelearn-header-right' });
+
+    // Quick Edit Button
+    const editBtn = headerRight.createEl('button', {
+      cls: 'seelearn-jump-btn seelearn-btn-edit',
+      title: 'Быстрое редактирование карточки без перехода в заметку',
+    });
+    setIcon(editBtn.createSpan({ cls: 'seelearn-icon-inline' }), 'edit-3');
+    editBtn.createSpan({ text: 'Изменить' });
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      new QuickEditCardModal(this.app, card, async () => {
+        await this.plugin.reloadAllCards();
+      }).open();
+    });
 
     const fileLabel = headerRight.createDiv({
       cls: 'seelearn-file-link',
@@ -800,6 +832,69 @@ topics:
         const item3 = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
         item3.createDiv({ cls: 'seelearn-stat-val', text: `${this.sessionStats.againCount}` });
         item3.createDiv({ cls: 'seelearn-stat-lbl', text: 'Забываний (Снова)' });
+      }
+
+      // Streak Stats Banner
+      const streakStats = this.plugin.storage.getStudyStreakStats();
+      const streakBanner = emptyBox.createDiv({ cls: 'seelearn-streak-banner' });
+      streakBanner.createDiv({
+        cls: 'seelearn-streak-pill',
+        text: `🔥 Стрик: ${streakStats.currentStreak} дн.`,
+        title: `Текущая непрерывная серия: ${streakStats.currentStreak} дней подряд`,
+      });
+      streakBanner.createDiv({
+        cls: 'seelearn-streak-pill',
+        text: `🏆 Рекорд: ${streakStats.bestStreak} дн.`,
+        title: `Рекордная серия: ${streakStats.bestStreak} дней подряд`,
+      });
+      streakBanner.createDiv({
+        cls: 'seelearn-streak-pill',
+        text: `📚 Всего: ${streakStats.totalReviews} повторений`,
+        title: `Всего повторений карточек за все время: ${streakStats.totalReviews}`,
+      });
+
+      // 35-Day (5-week) Activity Heatmap
+      const heatmapContainer = emptyBox.createDiv({ cls: 'seelearn-heatmap-wrap' });
+      heatmapContainer.createEl('div', {
+        cls: 'seelearn-heatmap-title',
+        text: 'Активность повторений за последние 5 недель',
+      });
+      const heatmapGrid = heatmapContainer.createDiv({ cls: 'seelearn-heatmap-grid' });
+      const today = new Date();
+      for (let i = 34; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        const count = streakStats.dailyActivity[dateStr] || 0;
+        let level = 0;
+        if (count > 0 && count <= 3) level = 1;
+        else if (count > 3 && count <= 10) level = 2;
+        else if (count > 10 && count <= 25) level = 3;
+        else if (count > 25) level = 4;
+
+        const cell = heatmapGrid.createDiv({ cls: `seelearn-heatmap-cell level-${level}` });
+        cell.setAttribute('title', `${dateStr}: ${count} повторений`);
+      }
+
+      // Leech warning banner (if any leeches in vault)
+      const leeches = this.plugin.cards.filter((c) =>
+        isCardLeech(this.plugin.storage.getProgress(c.id), this.plugin.settings.leechThreshold || 4)
+      );
+      if (leeches.length > 0) {
+        const leechBox = emptyBox.createDiv({ cls: 'seelearn-leech-notice' });
+        leechBox.createSpan({
+          text: `⚡ Внимание: обнаружено ${leeches.length} карточек-пиявок (карты с частыми ошибками).`,
+        });
+        const studyLeechesBtn = leechBox.createEl('button', {
+          cls: 'seelearn-nav-btn mod-small',
+          text: 'Изучить пиявки',
+        });
+        studyLeechesBtn.addEventListener('click', () => {
+          this.sessionQueue = [...leeches];
+          this.currentIndex = 0;
+          this.isFlipped = false;
+          this.renderAll();
+        });
       }
 
       const actionsRow = emptyBox.createDiv({ cls: 'seelearn-summary-actions' });
@@ -1244,3 +1339,109 @@ class WarningsModal extends Modal {
     this.contentEl.empty();
   }
 }
+
+/**
+ * Modal for editing flashcard content directly in place without opening the markdown note.
+ */
+class QuickEditCardModal extends Modal {
+  private card: Flashcard;
+  private onSaveCallback: () => Promise<void>;
+
+  constructor(app: App, card: Flashcard, onSaveCallback: () => Promise<void>) {
+    super(app);
+    this.card = card;
+    this.onSaveCallback = onSaveCallback;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl('h2', { text: 'Быстрое редактирование карточки' });
+    contentEl.createEl('p', {
+      cls: 'seelearn-edit-subtitle',
+      text: `${this.card.filePath} (строки ${this.card.lineStart}-${this.card.lineEnd})`,
+    });
+
+    contentEl.createEl('label', { text: 'Вопрос / Лицевая сторона (@front):' });
+    const frontArea = contentEl.createEl('textarea', {
+      cls: 'seelearn-edit-textarea',
+      value: this.card.front,
+    });
+    frontArea.rows = 6;
+
+    let backArea: HTMLTextAreaElement | null = null;
+    if (this.card.hasBack) {
+      contentEl.createEl('label', { text: 'Ответ / Оборотная сторона (@back):' });
+      backArea = contentEl.createEl('textarea', {
+        cls: 'seelearn-edit-textarea',
+        value: this.card.back,
+      });
+      backArea.rows = 6;
+    }
+
+    const btnRow = contentEl.createDiv({ cls: 'seelearn-modal-actions' });
+    const cancelBtn = btnRow.createEl('button', { text: 'Отмена' });
+    cancelBtn.addEventListener('click', () => this.close());
+
+    const saveBtn = btnRow.createEl('button', { cls: 'mod-cta', text: 'Сохранить изменения' });
+    saveBtn.addEventListener('click', async () => {
+      const file = this.app.vault.getAbstractFileByPath(this.card.filePath);
+      if (!(file instanceof TFile)) {
+        new Notice('Файл карточки не найден на диске');
+        return;
+      }
+
+      const newFront = frontArea.value.trim();
+      const newBack = backArea ? backArea.value.trim() : '';
+
+      try {
+        const fileContent = await this.app.vault.read(file);
+        const lines = fileContent.split(/\r?\n/);
+        const startIdx = this.card.lineStart - 1;
+        const endIdx = this.card.lineEnd - 1;
+
+        if (startIdx < 0 || endIdx >= lines.length) {
+          new Notice('Не удалось определить границы карточки в файле');
+          return;
+        }
+
+        const originalHeader = lines[startIdx];
+        const isCommentSyntax = originalHeader.includes('%%');
+        const tagPart = this.card.localTags.length > 0 ? ` #${this.card.localTags.join(' #')}` : '';
+
+        let replacement = '';
+        if (isCommentSyntax) {
+          replacement = `%% @card${tagPart} %%\n%% @front %%\n${newFront}\n`;
+          if (this.card.hasBack && newBack) {
+            replacement += `%% @back %%\n${newBack}\n`;
+          }
+          replacement += `%% @end %%`;
+        } else {
+          replacement = `@card${tagPart}\n@front\n${newFront}\n`;
+          if (this.card.hasBack && newBack) {
+            replacement += `@back\n${newBack}\n`;
+          }
+          replacement += `@end`;
+        }
+
+        const updatedLines = [
+          ...lines.slice(0, startIdx),
+          replacement,
+          ...lines.slice(endIdx + 1),
+        ];
+
+        await this.app.vault.modify(file, updatedLines.join('\n'));
+        new Notice('Карточка успешно обновлена');
+        this.close();
+        await this.onSaveCallback();
+      } catch (err) {
+        new Notice(`Ошибка сохранения: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+

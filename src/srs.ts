@@ -158,3 +158,12 @@ export function isCardDue(record: CardProgressRecord | undefined, todayStr?: str
 export function isCardNew(record: CardProgressRecord | undefined): boolean {
   return !record || record.repetitions === 0;
 }
+
+/**
+ * Checks whether a card is a "leech" (has exceeded the lapse threshold).
+ */
+export function isCardLeech(record: CardProgressRecord | undefined, threshold = 4): boolean {
+  if (!record) return false;
+  return (record.lapses || 0) >= threshold;
+}
+

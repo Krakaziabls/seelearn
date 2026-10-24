@@ -7,6 +7,7 @@ import {
   SeeLearnSettings,
   SeeLearnStorageData,
   SRSRatingValue,
+  StudyStreakStats,
 } from './types';
 import { calculateSRSReview, isCardDue, isCardNew, SRSRating } from './srs';
 
@@ -197,6 +198,84 @@ export class StorageManager {
       totalTracked: records.length,
       totalLapses,
       reviewedToday,
+    };
+  }
+
+  /**
+   * Calculates study streak statistics (current streak, best streak, daily activity).
+   */
+  getStudyStreakStats(): StudyStreakStats {
+    const dailyActivity: Record<string, number> = {};
+    let totalReviews = 0;
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    for (const record of Object.values(this.data.progress)) {
+      if (record.history && record.history.length > 0) {
+        for (const review of record.history) {
+          totalReviews++;
+          const dateStr = review.date.split('T')[0];
+          dailyActivity[dateStr] = (dailyActivity[dateStr] || 0) + 1;
+        }
+      } else if (record.lastReviewed) {
+        totalReviews++;
+        const dateStr = record.lastReviewed.split('T')[0];
+        dailyActivity[dateStr] = (dailyActivity[dateStr] || 0) + 1;
+      }
+    }
+
+    const reviewedToday = dailyActivity[todayStr] || 0;
+
+    // Calculate streaks
+    let currentStreak = 0;
+    let bestStreak = 0;
+
+    const now = new Date();
+    let checkDate = new Date(now);
+    if (!dailyActivity[todayStr]) {
+      // Check yesterday to see if streak is still active
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+
+    while (true) {
+      const dStr = checkDate.toISOString().split('T')[0];
+      if (dailyActivity[dStr] && dailyActivity[dStr] > 0) {
+        currentStreak++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+
+    // Best streak
+    const sortedDates = Object.keys(dailyActivity).sort();
+    if (sortedDates.length > 0) {
+      let tempStreak = 0;
+      let prevTs = 0;
+      const oneDayMs = 24 * 60 * 60 * 1000;
+      for (const d of sortedDates) {
+        const ts = new Date(d).getTime();
+        if (prevTs === 0 || Math.round((ts - prevTs) / oneDayMs) === 1) {
+          tempStreak++;
+        } else {
+          tempStreak = 1;
+        }
+        prevTs = ts;
+        if (tempStreak > bestStreak) {
+          bestStreak = tempStreak;
+        }
+      }
+    }
+
+    if (currentStreak > bestStreak) {
+      bestStreak = currentStreak;
+    }
+
+    return {
+      currentStreak,
+      bestStreak,
+      totalReviews,
+      reviewedToday,
+      dailyActivity,
     };
   }
 

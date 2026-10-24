@@ -19,6 +19,14 @@ export interface CardProgressRecord {
   history?: CardReviewEntry[];
 }
 
+export interface StudyStreakStats {
+  currentStreak: number;
+  bestStreak: number;
+  totalReviews: number;
+  reviewedToday: number;
+  dailyActivity: Record<string, number>; // YYYY-MM-DD -> count
+}
+
 export interface SeeLearnSettings {
   triggerProperty: string;
   triggerValue: string;
@@ -30,6 +38,8 @@ export interface SeeLearnSettings {
   shuffleOnStart: boolean;
   interleaveTopics: boolean;
   enable3DFlip: boolean;
+  enableCloze: boolean;
+  leechThreshold: number;
   requeueStep: number;
   maxNewPerSession: number;
   maxDuePerSession: number;
@@ -46,6 +56,8 @@ export const DEFAULT_SETTINGS: SeeLearnSettings = {
   shuffleOnStart: false,
   interleaveTopics: true,
   enable3DFlip: true,
+  enableCloze: true,
+  leechThreshold: 4,
   requeueStep: 3,
   maxNewPerSession: 25,
   maxDuePerSession: 50,
@@ -73,6 +85,7 @@ export interface Flashcard {
   front: string;
   back: string;
   hasBack: boolean; // false for front-only info cards
+  isCloze: boolean;
   tags: string[];
   globalTopics: string[];
   localTags: string[];

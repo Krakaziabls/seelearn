@@ -99,3 +99,49 @@ test('StorageManager migrates card IDs on file rename and prunes orphaned cards'
   assert.strictEqual(storage.getProgress('new-hash-2'), undefined);
 });
 
+test('StorageManager calculates study streaks and daily activity', async () => {
+  const mockPlugin = {
+    loadData: async () => null,
+    saveData: async () => {},
+  } as unknown as Plugin;
+
+  const storage = new StorageManager(mockPlugin);
+  await storage.load();
+
+  const today = new Date();
+  const dToday = today.toISOString().split('T')[0];
+
+  const yest = new Date(today);
+  yest.setDate(yest.getDate() - 1);
+  const dYest = yest.toISOString().split('T')[0];
+
+  const dayBefore = new Date(today);
+  dayBefore.setDate(dayBefore.getDate() - 2);
+  const dDayBefore = dayBefore.toISOString().split('T')[0];
+
+  storage.data.progress['c1'] = {
+    cardId: 'c1',
+    repetitions: 1,
+    interval: 1,
+    easeFactor: 2.5,
+    dueDate: dToday,
+    lastReviewed: `${dDayBefore}T10:00:00.000Z`,
+    lapses: 0,
+    history: [
+      { date: `${dDayBefore}T10:00:00.000Z`, rating: 'good' },
+      { date: `${dYest}T10:00:00.000Z`, rating: 'good' },
+      { date: `${dToday}T10:00:00.000Z`, rating: 'easy' },
+    ],
+  };
+
+  const streak = storage.getStudyStreakStats();
+  assert.strictEqual(streak.currentStreak, 3);
+  assert.strictEqual(streak.bestStreak, 3);
+  assert.strictEqual(streak.totalReviews, 3);
+  assert.strictEqual(streak.reviewedToday, 1);
+  assert.strictEqual(streak.dailyActivity[dToday], 1);
+  assert.strictEqual(streak.dailyActivity[dYest], 1);
+  assert.strictEqual(streak.dailyActivity[dDayBefore], 1);
+});
+
+

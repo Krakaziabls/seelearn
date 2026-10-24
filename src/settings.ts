@@ -182,6 +182,33 @@ export class SeeLearnSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(containerEl)
+      .setName('Порог детектора пиявок (Leech Threshold)')
+      .setDesc('Количество ошибок (нажатий «Снова»), после которого карточка помечается как пиявка (по умолчанию: 4).')
+      .addSlider((slider) =>
+        slider
+          .setLimits(2, 10, 1)
+          .setValue(this.plugin.settings.leechThreshold || 4)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            this.plugin.settings.leechThreshold = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Поддержка карточек с пропусками (Cloze Deletions)')
+      .setDesc('Автоматически распознавать синтаксис {{c1::ответ}} и ==выделенный текст== как карточки с заполнением пропусков.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableCloze)
+          .onChange(async (value) => {
+            this.plugin.settings.enableCloze = value;
+            await this.plugin.saveSettings();
+            await this.plugin.reloadAllCards();
+          })
+      );
+
     containerEl.createEl('h3', { text: 'Хранилище данных и статистика' });
 
     const stats = this.plugin.storage.getStats();

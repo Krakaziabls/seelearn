@@ -1,6 +1,7 @@
 import { MetadataCache, TFile } from 'obsidian';
 import { Flashcard, ParsedFileResult, SeeLearnSettings, ValidationWarning } from './types';
 import { generateCardId, normalizeCardContent } from './hash';
+import { hasClozeDeletions, renderClozeBack, renderClozeFront } from './cloze';
 
 export type MarkerType = 'card' | 'front' | 'back' | 'end';
 
@@ -325,16 +326,30 @@ export function parseCardsFromMarkdown(
             const localTags = extractLocalTags(cardArgs);
             const mergedTags = Array.from(new Set([...globalTopics, ...localTags]));
 
-            const frontContent = frontLines.join('\n').trim();
-            const backContent = backLines.join('\n').trim();
-            const hasBack = backCount === 1 && backContent.length > 0;
+            const rawFrontContent = frontLines.join('\n').trim();
+            const rawBackContent = backLines.join('\n').trim();
             const customId = extractCustomId(cardArgs);
 
-            const normFront = normalizeCardContent(frontContent);
+            const isCloze = hasClozeDeletions(rawFrontContent);
+            let frontContent = rawFrontContent;
+            let backContent = rawBackContent;
+            let hasBack = backCount === 1 && rawBackContent.length > 0;
+
+            if (isCloze) {
+              frontContent = renderClozeFront(rawFrontContent);
+              if (!hasBack) {
+                backContent = renderClozeBack(rawFrontContent);
+                hasBack = true;
+              } else {
+                backContent = `${renderClozeBack(rawFrontContent)}\n\n${rawBackContent}`;
+              }
+            }
+
+            const normFront = normalizeCardContent(rawFrontContent);
             const occurrence = contentOccurrences.get(normFront) || 0;
             contentOccurrences.set(normFront, occurrence + 1);
 
-            const cardId = generateCardId(filePath, frontContent, customId, occurrence);
+            const cardId = generateCardId(filePath, rawFrontContent, customId, occurrence);
 
             cards.push({
               id: cardId,
@@ -346,6 +361,7 @@ export function parseCardsFromMarkdown(
               front: frontContent,
               back: backContent,
               hasBack,
+              isCloze,
               tags: mergedTags,
               globalTopics,
               localTags,
