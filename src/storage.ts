@@ -200,11 +200,60 @@ export class StorageManager {
     };
   }
 
-  cleanup(): void {
+  /**
+   * Migrates card progress records when card IDs change (e.g. on file rename).
+   */
+  migrateCardIds(idMap: Map<string, string>): void {
+    let changed = false;
+    for (const [oldId, newId] of idMap.entries()) {
+      if (this.data.progress[oldId] && oldId !== newId) {
+        const record = this.data.progress[oldId];
+        record.cardId = newId;
+        this.data.progress[newId] = record;
+        delete this.data.progress[oldId];
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.scheduleSave();
+    }
+  }
+
+  /**
+   * Cleans up orphaned card progress records no longer present in the vault.
+   */
+  pruneOrphanedCards(validCardIds: Set<string>): number {
+    let prunedCount = 0;
+    for (const id of Object.keys(this.data.progress)) {
+      if (!validCardIds.has(id)) {
+        delete this.data.progress[id];
+        prunedCount++;
+      }
+    }
+    if (prunedCount > 0) {
+      this.scheduleSave();
+    }
+    return prunedCount;
+  }
+
+  /**
+   * Immediately flushes any debounced pending writes to disk.
+   */
+  async flush(): Promise<void> {
     if (this.saveTimeoutId !== null) {
       clearTimeout(this.saveTimeoutId as any);
       this.saveTimeoutId = null;
+      try {
+        await this.plugin.saveData(this.data);
+      } catch (err) {
+        console.error('SeeLearn: Failed to flush data on exit:', err);
+      }
     }
   }
+
+  async cleanup(): Promise<void> {
+    await this.flush();
+  }
 }
+
 

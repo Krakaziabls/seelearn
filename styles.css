@@ -118,9 +118,9 @@
 }
 
 .seelearn-badge-warning {
-  background-color: rgba(245, 158, 11, 0.15);
-  color: var(--color-orange, #f59e0b);
-  border: 1px solid rgba(245, 158, 11, 0.35);
+  background-color: var(--background-modifier-warning, rgba(245, 158, 11, 0.15));
+  color: var(--text-warning, var(--color-orange, #f59e0b));
+  border: 1px solid var(--color-orange, rgba(245, 158, 11, 0.35));
   padding: 3px 8px;
   font-size: 0.82em;
   border-radius: 12px;
@@ -129,7 +129,8 @@
 }
 
 .seelearn-badge-warning:hover {
-  background-color: rgba(245, 158, 11, 0.25);
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
 }
 
 /* --------------------------------------------------------------------------
@@ -463,6 +464,28 @@
   user-select: text;
 }
 
+/* Ensure wide tables and code blocks scroll inside card without blowing up container */
+.seelearn-card-body table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+  border-collapse: collapse;
+  margin: 14px 0;
+}
+
+.seelearn-card-body pre {
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: var(--radius-m, 6px);
+  margin: 12px 0;
+}
+
+.seelearn-answer-section {
+  animation: seelearnFadeIn 0.22s ease-in-out;
+  margin-top: 14px;
+}
+
 .seelearn-content {
   font-family: var(--font-text);
   line-height: 1.65;
@@ -636,24 +659,24 @@
 
 .seelearn-btn-again {
   border: 1px solid var(--color-red, #ef4444) !important;
-  color: var(--color-red, #ef4444) !important;
+  color: var(--text-error, var(--color-red, #ef4444)) !important;
   background: transparent;
 }
 
 .seelearn-btn-again:hover:not(:disabled) {
   background-color: var(--color-red, #ef4444) !important;
-  color: #ffffff !important;
+  color: var(--text-on-accent, #ffffff) !important;
 }
 
 .seelearn-btn-hard {
   border: 1px solid var(--color-orange, #f59e0b) !important;
-  color: var(--color-orange, #f59e0b) !important;
+  color: var(--text-warning, var(--color-orange, #f59e0b)) !important;
   background: transparent;
 }
 
 .seelearn-btn-hard:hover:not(:disabled) {
   background-color: var(--color-orange, #f59e0b) !important;
-  color: #ffffff !important;
+  color: var(--text-on-accent, #ffffff) !important;
 }
 
 .seelearn-btn-good {
@@ -664,18 +687,18 @@
 
 .seelearn-btn-good:hover:not(:disabled) {
   background-color: var(--interactive-accent) !important;
-  color: var(--text-on-accent) !important;
+  color: var(--text-on-accent, #ffffff) !important;
 }
 
 .seelearn-btn-easy {
   border: 1px solid var(--color-green, #10b981) !important;
-  color: var(--color-green, #10b981) !important;
+  color: var(--text-success, var(--color-green, #10b981)) !important;
   background: transparent;
 }
 
 .seelearn-btn-easy:hover:not(:disabled) {
   background-color: var(--color-green, #10b981) !important;
-  color: #ffffff !important;
+  color: var(--text-on-accent, #ffffff) !important;
 }
 
 /* SRS Queue Filter Pills in Toolbar */

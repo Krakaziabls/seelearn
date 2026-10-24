@@ -222,3 +222,23 @@ test('cleanTag strips leading hash and wikilinks', () => {
   assert.strictEqual(cleanTag('   #nested/tag   '), 'nested/tag');
 });
 
+test('parseCardsFromMarkdown parses cards inside blockquotes and callouts', () => {
+  const md = `
+> [!NOTE] Go Concurrency
+> %% @card #golang #channels %%
+> %% @front %%
+> How do unbuffered channels work?
+> %% @back %%
+> Sender blocks until receiver is ready.
+> %% @end %%
+`;
+
+  const result = parseCardsFromMarkdown('notes/go.md', 'go.md', md, []);
+  assert.strictEqual(result.cards.length, 1);
+  assert.strictEqual(result.warnings.length, 0);
+  assert.ok(result.cards[0].tags.includes('golang'));
+  assert.ok(result.cards[0].front.includes('How do unbuffered channels work?'));
+  assert.ok(result.cards[0].back.includes('Sender blocks until receiver is ready.'));
+});
+
+

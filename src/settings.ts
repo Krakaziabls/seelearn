@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from 'obsidian';
+import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type SeeLearnPlugin from './main';
 import { RevealMode } from './types';
 
@@ -199,6 +199,20 @@ export class SeeLearnSettingTab extends PluginSettingTab {
           .setCta()
           .onClick(async () => {
             await this.plugin.reloadAllCards();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Очистить устаревшие карточки (Garbage Collection)')
+      .setDesc('Удалить из data.json прогресс карточек, которые были удалены или больше не существуют в заметках.')
+      .addButton((button) =>
+        button
+          .setButtonText('Очистить кэш')
+          .onClick(async () => {
+            const validIds = new Set(this.plugin.cards.map((c) => c.id));
+            const count = this.plugin.storage.pruneOrphanedCards(validIds);
+            new Notice(`SeeLearn: удалено ${count} устаревших записей из data.json`);
+            this.display(); // Refresh settings tab stats
           })
       );
   }

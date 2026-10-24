@@ -35,7 +35,9 @@ export function parseMarkerLine(line: string): MarkerMatch | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
 
-  let content = trimmed;
+  // Strip blockquote / callout prefix (e.g. "> ", ">> ")
+  let content = trimmed.replace(/^(?:>\s*)+/, '').trim();
+  if (!content) return null;
 
   // Check and strip optional enclosing %% ... %%
   if (content.startsWith('%%')) {

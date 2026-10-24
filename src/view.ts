@@ -84,7 +84,10 @@ export class StudyView extends ItemView {
 
     // Register keyboard navigation
     this.registerDomEvent(window, 'keydown', (evt: KeyboardEvent) => {
-      if (!this.containerEl.isShown()) return;
+      // Check if StudyView or leaf has focus
+      const activeView = this.app.workspace.getActiveViewOfType(StudyView);
+      const isFocused = this.containerEl.contains(document.activeElement);
+      if (activeView !== this && !isFocused) return;
 
       const target = evt.target as HTMLElement | null;
       if (
@@ -92,7 +95,8 @@ export class StudyView extends ItemView {
         (target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
           target.tagName === 'SELECT' ||
-          target.isContentEditable)
+          target.isContentEditable ||
+          target.closest('input, textarea, select, [contenteditable="true"]'))
       ) {
         return;
       }
@@ -169,21 +173,37 @@ export class StudyView extends ItemView {
   }
 
   /**
-   * Refreshes the view when plugin index is updated.
+   * Refreshes the view when plugin index is updated without disrupting the current session.
    */
   public onIndexUpdated(): void {
-    const currentCardId = this.sessionQueue[this.currentIndex]?.id;
-    const filtered = this.getFilteredCards();
-    this.sessionQueue = [...filtered];
-
-    if (currentCardId) {
-      const newIndex = this.sessionQueue.findIndex((c) => c.id === currentCardId);
-      this.currentIndex = newIndex >= 0 ? newIndex : 0;
-    } else {
-      this.currentIndex = 0;
+    if (this.sessionQueue.length === 0) {
+      this.resetSession();
+      return;
     }
 
-    this.renderAll();
+    const currentCard = this.sessionQueue[this.currentIndex];
+    const cardsMap = new Map(this.plugin.cards.map((c) => [c.id, c]));
+
+    // Update in-flight cards in place preserving active queue order
+    this.sessionQueue = this.sessionQueue
+      .map((c) => cardsMap.get(c.id))
+      .filter((c): c is Flashcard => c !== undefined && this.cardMatchesScope(c));
+
+    if (this.sessionQueue.length === 0) {
+      this.resetSession();
+      return;
+    }
+
+    if (currentCard) {
+      const idx = this.sessionQueue.findIndex((c) => c.id === currentCard.id);
+      this.currentIndex = idx >= 0 ? idx : Math.min(this.currentIndex, this.sessionQueue.length - 1);
+    } else {
+      this.currentIndex = Math.min(this.currentIndex, this.sessionQueue.length - 1);
+    }
+
+    this.renderToolbar();
+    this.renderCardArea();
+    this.renderNavBar();
   }
 
   private cardMatchesScope(card: Flashcard): boolean {
@@ -664,12 +684,19 @@ export class StudyView extends ItemView {
       const promptEl = cardBody.createDiv({ cls: 'seelearn-flip-prompt' });
       promptEl.createSpan({ text: 'Нажмите Пробел или кнопку «Далее» для продолжения' });
 
-      cardBody.addEventListener('click', () => {
+      cardBody.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'A' || target.closest('a')) return;
         this.nextCard();
       });
-    } else if (!this.isFlipped) {
-      // TWO-SIDED CARD: Question (@front)
-      const frontEl = cardBody.createDiv({ cls: 'seelearn-content seelearn-front' });
+    } else {
+      // TWO-SIDED CARD: Render front and answer section
+      const frontEl = cardBody.createDiv({
+        cls: `seelearn-content seelearn-front ${this.isFlipped && this.plugin.settings.revealMode === 'append' ? 'seelearn-faded' : ''}`,
+      });
+      if (this.isFlipped && this.plugin.settings.revealMode === 'replace') {
+        frontEl.style.display = 'none';
+      }
       await MarkdownRenderer.render(
         this.app,
         card.front,
@@ -678,47 +705,41 @@ export class StudyView extends ItemView {
         this.activeCardComponent
       );
 
-      const promptEl = cardBody.createDiv({ cls: 'seelearn-flip-prompt' });
-      promptEl.createSpan({ text: 'Нажмите Пробел или карточку, чтобы посмотреть ответ' });
-
-      cardBody.addEventListener('click', () => {
-        this.flipCard();
-      });
-    } else {
-      // TWO-SIDED CARD: Answer (@back)
-      if (this.plugin.settings.revealMode === 'append') {
-        const frontEl = cardBody.createDiv({
-          cls: 'seelearn-content seelearn-front seelearn-faded',
-        });
-        await MarkdownRenderer.render(
-          this.app,
-          card.front,
-          frontEl,
-          card.filePath,
-          this.activeCardComponent
-        );
-
-        const dividerEl = cardBody.createDiv({ cls: 'seelearn-divider' });
-        dividerEl.createSpan({ cls: 'seelearn-divider-text', text: 'ОТВЕТ' });
-
-        const backEl = cardBody.createDiv({ cls: 'seelearn-content seelearn-back' });
-        await MarkdownRenderer.render(
-          this.app,
-          card.back,
-          backEl,
-          card.filePath,
-          this.activeCardComponent
-        );
-      } else {
-        const backEl = cardBody.createDiv({ cls: 'seelearn-content seelearn-back' });
-        await MarkdownRenderer.render(
-          this.app,
-          card.back,
-          backEl,
-          card.filePath,
-          this.activeCardComponent
-        );
+      const answerSection = cardBody.createDiv({ cls: 'seelearn-answer-section' });
+      if (!this.isFlipped) {
+        answerSection.style.display = 'none';
       }
+
+      if (this.plugin.settings.revealMode === 'append') {
+        const dividerEl = answerSection.createDiv({ cls: 'seelearn-divider' });
+        dividerEl.createSpan({ cls: 'seelearn-divider-text', text: 'ОТВЕТ' });
+      }
+
+      const backEl = answerSection.createDiv({ cls: 'seelearn-content seelearn-back' });
+      await MarkdownRenderer.render(
+        this.app,
+        card.back,
+        backEl,
+        card.filePath,
+        this.activeCardComponent
+      );
+
+      const promptEl = cardBody.createDiv({ cls: 'seelearn-flip-prompt' });
+      promptEl.createSpan({
+        text: !this.isFlipped
+          ? 'Нажмите Пробел или карточку, чтобы посмотреть ответ'
+          : this.isTestMode()
+          ? 'Оцените сложность (клавиши 1-4)'
+          : 'Ответ показан (Space — далее)',
+      });
+
+      cardBody.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'A' || target.closest('a')) return;
+        if (!this.isFlipped) {
+          this.flipCard();
+        }
+      });
     }
   }
 
@@ -974,8 +995,40 @@ topics:
     if (!currentCard?.hasBack) return; // Cannot flip front-only card
 
     this.isFlipped = !this.isFlipped;
-    this.renderCardArea();
-    this.renderNavBar();
+
+    const cardContainer = this.cardAreaEl.querySelector('.seelearn-card-container');
+    const answerSection = this.cardAreaEl.querySelector<HTMLElement>('.seelearn-answer-section');
+    const frontEl = this.cardAreaEl.querySelector<HTMLElement>('.seelearn-front');
+    const promptEl = this.cardAreaEl.querySelector<HTMLElement>('.seelearn-flip-prompt');
+
+    if (cardContainer && answerSection && frontEl) {
+      if (this.isFlipped) {
+        cardContainer.addClass('is-flipped');
+        answerSection.style.display = 'block';
+        if (this.plugin.settings.revealMode === 'append') {
+          frontEl.addClass('seelearn-faded');
+        } else {
+          frontEl.style.display = 'none';
+        }
+        if (promptEl) {
+          promptEl.setText(
+            this.isTestMode() ? 'Оцените сложность (клавиши 1-4)' : 'Ответ показан (Space — далее)'
+          );
+        }
+      } else {
+        cardContainer.removeClass('is-flipped');
+        answerSection.style.display = 'none';
+        frontEl.removeClass('seelearn-faded');
+        frontEl.style.display = '';
+        if (promptEl) {
+          promptEl.setText('Нажмите Пробел или карточку, чтобы посмотреть ответ');
+        }
+      }
+      this.renderNavBar();
+    } else {
+      this.renderCardArea();
+      this.renderNavBar();
+    }
   }
 
   private nextCard(): void {
@@ -1112,7 +1165,10 @@ topics:
   private async openCardInNote(card: Flashcard): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(card.filePath);
     if (file instanceof TFile) {
-      const leaf = this.app.workspace.getLeaf(false);
+      let leaf = this.app.workspace.getLeavesOfType('markdown')[0];
+      if (!leaf || leaf.view === this) {
+        leaf = this.app.workspace.getLeaf('tab');
+      }
       const targetLine = Math.max(0, card.lineStart - 1);
       await leaf.openFile(file, {
         eState: {
@@ -1123,6 +1179,7 @@ topics:
           },
         },
       });
+      this.app.workspace.revealLeaf(leaf);
     } else {
       new Notice(`Файл не найден: ${card.filePath}`);
     }
