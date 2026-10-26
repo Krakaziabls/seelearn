@@ -144,6 +144,43 @@ export default class SeeLearnPlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: 'shuffle-queue',
+      name: 'Перемешать карточки в текущей сессии (Shuffle Queue)',
+      checkCallback: (checking: boolean) => {
+        const view = this.getActiveStudyView();
+        if (view) {
+          if (!checking) view.shuffleQueueAction();
+          return true;
+        }
+        return false;
+      },
+    });
+
+    this.addCommand({
+      id: 'insert-card-template',
+      name: 'Вставить шаблон карточки (Insert Card Template)',
+      editorCallback: (editor) => {
+        const isComment = this.settings.templateStyle !== 'plain';
+        const template = isComment
+          ? `%% @card %%\n%% @front %%\nВопрос\n%% @back %%\nОтвет\n%% @end %%\n`
+          : `@card\n@front\nВопрос\n@back\nОтвет\n@end\n`;
+        editor.replaceSelection(template);
+      },
+    });
+
+    this.addCommand({
+      id: 'insert-cloze-template',
+      name: 'Вставить шаблон карточки с пропуском (Insert Cloze Template)',
+      editorCallback: (editor) => {
+        const isComment = this.settings.templateStyle !== 'plain';
+        const template = isComment
+          ? `%% @card %%\nТекст вопроса с {{c1::скрытым ответом}}.\n%% @end %%\n`
+          : `@card\nТекст вопроса с {{c1::скрытым ответом}}.\n@end\n`;
+        editor.replaceSelection(template);
+      },
+    });
+
     // Add settings tab
     this.addSettingTab(new SeeLearnSettingTab(this.app, this));
 

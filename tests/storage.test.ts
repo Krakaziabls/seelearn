@@ -144,4 +144,38 @@ test('StorageManager calculates study streaks and daily activity', async () => {
   assert.strictEqual(streak.dailyActivity[dDayBefore], 1);
 });
 
+test('StorageManager manages test presets and records runs', async () => {
+  const mockPlugin = {
+    loadData: async () => null,
+    saveData: async () => {},
+  } as unknown as Plugin;
+
+  const storage = new StorageManager(mockPlugin);
+  await storage.load();
+
+  assert.deepStrictEqual(storage.getTestPresets(), []);
+
+  storage.saveTestPreset({
+    id: 'test_1',
+    name: 'Анатомия: Сердце',
+    scope: 'folder:Медицина',
+    tags: ['сердце', 'кардио'],
+    createdAt: '2026-10-27T00:00:00.000Z',
+    runsCount: 0,
+  });
+
+  const presets = storage.getTestPresets();
+  assert.strictEqual(presets.length, 1);
+  assert.strictEqual(presets[0].name, 'Анатомия: Сердце');
+  assert.strictEqual(presets[0].runsCount, 0);
+
+  storage.recordTestPresetRun('test_1');
+  assert.strictEqual(storage.getTestPreset('test_1')?.runsCount, 1);
+  assert.ok(storage.getTestPreset('test_1')?.lastRun);
+
+  storage.deleteTestPreset('test_1');
+  assert.strictEqual(storage.getTestPresets().length, 0);
+});
+
+
 

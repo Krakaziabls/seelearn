@@ -8,6 +8,7 @@ import {
   SeeLearnStorageData,
   SRSRatingValue,
   StudyStreakStats,
+  TestPreset,
 } from './types';
 import { calculateSRSReview, isCardDue, isCardNew, SRSRating } from './srs';
 
@@ -37,12 +38,14 @@ export class StorageManager {
         version: 1,
         settings: Object.assign({}, DEFAULT_SETTINGS, rawData),
         progress: {},
+        testPresets: {},
       };
     } else {
       this.data = {
         version: rawData.version || 1,
         settings: Object.assign({}, DEFAULT_SETTINGS, rawData.settings),
         progress: rawData.progress || {},
+        testPresets: rawData.testPresets || {},
       };
     }
 
@@ -313,6 +316,45 @@ export class StorageManager {
       this.scheduleSave();
     }
     return prunedCount;
+  }
+
+  /**
+   * Returns all saved test presets.
+   */
+  getTestPresets(): TestPreset[] {
+    if (!this.data.testPresets) {
+      this.data.testPresets = {};
+    }
+    return Object.values(this.data.testPresets).sort((a, b) =>
+      (b.lastRun || b.createdAt).localeCompare(a.lastRun || a.createdAt)
+    );
+  }
+
+  getTestPreset(id: string): TestPreset | undefined {
+    return this.data.testPresets?.[id];
+  }
+
+  saveTestPreset(preset: TestPreset): void {
+    if (!this.data.testPresets) {
+      this.data.testPresets = {};
+    }
+    this.data.testPresets[preset.id] = preset;
+    this.scheduleSave();
+  }
+
+  deleteTestPreset(id: string): void {
+    if (this.data.testPresets && this.data.testPresets[id]) {
+      delete this.data.testPresets[id];
+      this.scheduleSave();
+    }
+  }
+
+  recordTestPresetRun(id: string): void {
+    if (this.data.testPresets && this.data.testPresets[id]) {
+      this.data.testPresets[id].runsCount = (this.data.testPresets[id].runsCount || 0) + 1;
+      this.data.testPresets[id].lastRun = new Date().toISOString();
+      this.scheduleSave();
+    }
   }
 
   /**

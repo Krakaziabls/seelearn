@@ -8,9 +8,10 @@ import {
   Notice,
   Modal,
   App,
+  Setting,
 } from 'obsidian';
 import type SeeLearnPlugin from './main';
-import { CardProgressRecord, Flashcard, SRSQueueFilter, ValidationWarning } from './types';
+import { CardProgressRecord, Flashcard, SRSQueueFilter, TestPreset, ValidationWarning } from './types';
 import { fisherYatesShuffle, interleaveCards } from './shuffle';
 import { getSRSIntervalPreviews, isCardDue, isCardLeech, isCardNew, SRSRating } from './srs';
 
@@ -35,6 +36,7 @@ export class StudyView extends ItemView {
   private isFlipped: boolean = false;
   private activeCardComponent: Component | null = null;
   private sessionState: 'lobby' | 'active' | 'finished' = 'lobby';
+  private activePresetName?: string;
 
   // Session metrics for summary dashboard
   private sessionStats = {
@@ -458,7 +460,10 @@ export class StudyView extends ItemView {
     // 3. Shuffle Button
     const shuffleBtn = leftGroup.createEl('button', {
       cls: 'clickable-icon seelearn-btn-icon',
-      title: 'Перемешать колоду',
+      title:
+        this.sessionState === 'active'
+          ? 'Перемешать оставшиеся карточки в очереди'
+          : 'Перемешать колоду',
     });
     setIcon(shuffleBtn, 'shuffle');
     shuffleBtn.addEventListener('click', () => {
@@ -513,6 +518,15 @@ export class StudyView extends ItemView {
         this.srsFilter = 'new';
         this.sessionState = 'lobby';
         this.resetSession();
+      });
+
+      const helpBtn = srsGroup.createEl('button', {
+        cls: 'clickable-icon seelearn-btn-icon seelearn-help-btn',
+        title: 'Справка по методологии SRS: когда карточки попадают в «К повторению», оценки и пиявки',
+      });
+      setIcon(helpBtn, 'help-circle');
+      helpBtn.addEventListener('click', () => {
+        new SRSMethodologyModal(this.app).open();
       });
     }
 
@@ -714,6 +728,7 @@ export class StudyView extends ItemView {
 
     // Progress badge / Card kind pill
     const progress = this.plugin.storage.getProgress(card.id);
+    const isLeech = isCardLeech(progress, this.plugin.settings.leechThreshold || 4);
     const progressPill = headerLeft.createSpan({ cls: 'seelearn-progress-pill' });
 
     if (!card.hasBack) {
@@ -721,7 +736,16 @@ export class StudyView extends ItemView {
       progressPill.addClass('is-info');
       progressPill.setAttribute('title', 'Односторонняя карточка для изучения информации');
     } else if (this.isTestMode()) {
-      if (progress && progress.repetitions > 0) {
+      if (isLeech) {
+        progressPill.addClass('is-leech');
+        const iconSpan = progressPill.createSpan({ cls: 'seelearn-icon-inline' });
+        setIcon(iconSpan, 'alert-circle');
+        progressPill.createSpan({ text: ` Пиявка (${progress?.lapses || 0})` });
+        progressPill.setAttribute(
+          'title',
+          `Карточка вызывает частые ошибки (${progress?.lapses} сбоев). Рекомендуется переформулировать или разбить на простые факты.`
+        );
+      } else if (progress && (progress.repetitions > 0 || progress.lapses > 0)) {
         progressPill.setText(`Интервал: ${progress.interval} дн.`);
         progressPill.addClass('is-learned');
         progressPill.setAttribute(
@@ -737,25 +761,14 @@ export class StudyView extends ItemView {
       progressPill.addClass('is-learn');
     }
 
-    // Leech badge (repeated lapses)
-    const isLeech = isCardLeech(progress, this.plugin.settings.leechThreshold || 4);
-    if (isLeech) {
-      const leechPill = headerLeft.createSpan({ cls: 'seelearn-progress-pill is-leech' });
-      setIcon(leechPill.createSpan({ cls: 'seelearn-icon-inline' }), 'zap');
-      leechPill.createSpan({ text: ` ПИЯВКА (${progress?.lapses})` });
-      leechPill.setAttribute(
-        'title',
-        'Карточка вызывает частые ошибки. Рекомендуется переформулировать или разбить на простые факты.'
-      );
-    }
-
-    // Cloze Deletion badge
+    // Cloze Deletion badge (icon only, minimalist)
     if (card.isCloze) {
       const clozePill = headerLeft.createSpan({ cls: 'seelearn-progress-pill is-cloze' });
       setIcon(clozePill.createSpan({ cls: 'seelearn-icon-inline' }), 'scissors');
-      const label = card.clozeIndex ? ` КЛОУЗ (c${card.clozeIndex})` : ' КЛОУЗ';
-      clozePill.createSpan({ text: label });
-      clozePill.setAttribute('title', 'Карточка с заполнением пропусков (Cloze Deletion)');
+      clozePill.setAttribute(
+        'title',
+        `Карточка с заполнением пропусков (Cloze Deletion${card.clozeIndex ? `, c${card.clozeIndex}` : ''})`
+      );
     }
 
     // Tags list container with overflow scroll
@@ -980,7 +993,7 @@ export class StudyView extends ItemView {
     setIcon(pill2.createSpan({ cls: 'seelearn-icon-inline' }), 'trophy');
     pill2.createSpan({ text: ` Рекорд: ${streakStats.bestStreak} дн.` });
 
-    // Primary action button
+    // Primary action button & test saving
     const actionsRow = lobbyBox.createDiv({ cls: 'seelearn-lobby-actions' });
     const startBtn = actionsRow.createEl('button', {
       cls: 'seelearn-start-session-btn mod-cta',
@@ -990,13 +1003,93 @@ export class StudyView extends ItemView {
       text: this.isTestMode() ? 'Начать сессию проверки' : 'Начать изучение',
     });
     startBtn.addEventListener('click', () => {
+      this.activePresetName = undefined;
       this.startSession();
     });
 
-    lobbyBox.createEl('div', {
+    if (this.isTestMode()) {
+      const saveTestBtn = actionsRow.createEl('button', {
+        cls: 'seelearn-nav-btn seelearn-btn-save-test',
+        text: 'Сохранить как тест...',
+        title: 'Упаковать текущую выборку карточек в быстрый тест для повторного прохождения',
+      });
+      setIcon(saveTestBtn.createSpan({ cls: 'seelearn-icon-inline' }), 'bookmark');
+      saveTestBtn.addEventListener('click', () => {
+        new SaveTestModal(
+          this.app,
+          this.selectedScope,
+          Array.from(this.selectedTags),
+          (preset) => {
+            this.plugin.storage.saveTestPreset(preset);
+            new Notice(`Тест «${preset.name}» сохранен!`);
+            this.renderAll();
+          }
+        ).open();
+      });
+    }
+
+    const hintRow = lobbyBox.createDiv({ cls: 'seelearn-lobby-hint-row' });
+    hintRow.createSpan({
       cls: 'seelearn-lobby-hint',
-      text: 'Нажмите Пробел или Enter для быстрого старта',
+      text: 'Нажмите Пробел или Enter для быстрого старта • ',
     });
+    const methodologyLink = hintRow.createEl('a', {
+      cls: 'seelearn-methodology-link',
+      text: 'Как работает интервальное повторение?',
+    });
+    methodologyLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      new SRSMethodologyModal(this.app).open();
+    });
+
+    // Saved test presets list (for rapid testing)
+    const presets = this.plugin.storage.getTestPresets();
+    if (presets.length > 0 && this.isTestMode()) {
+      const presetsSection = lobbyBox.createDiv({ cls: 'seelearn-presets-section' });
+      const presetsHeader = presetsSection.createDiv({ cls: 'seelearn-presets-header' });
+      setIcon(presetsHeader.createSpan({ cls: 'seelearn-icon-inline' }), 'list-checks');
+      presetsHeader.createEl('h4', { text: 'Сохранённые тесты' });
+
+      const presetsList = presetsSection.createDiv({ cls: 'seelearn-presets-list' });
+      for (const preset of presets) {
+        const item = presetsList.createDiv({ cls: 'seelearn-preset-item' });
+        const left = item.createDiv({ cls: 'seelearn-preset-left' });
+        left.createDiv({ cls: 'seelearn-preset-name', text: preset.name });
+
+        const meta = left.createDiv({ cls: 'seelearn-preset-meta' });
+        const scopeText = preset.scope
+          ? (preset.scope.startsWith('folder:') ? `📁 ${preset.scope.substring(7)}` : `📄 ${preset.scope.substring(5).split('/').pop()}`)
+          : '🌐 Все заметки';
+        meta.createSpan({ text: scopeText });
+        if (preset.tags.length > 0) {
+          meta.createSpan({ text: ' • ' + preset.tags.map((t) => '#' + t).join(' ') });
+        }
+        meta.createSpan({ text: ` • Пройден: ${preset.runsCount || 0} раз` });
+
+        const right = item.createDiv({ cls: 'seelearn-preset-right' });
+        const playBtn = right.createEl('button', {
+          cls: 'seelearn-nav-btn mod-cta mod-small',
+          text: 'Запустить',
+          title: 'Пройти этот тест',
+        });
+        setIcon(playBtn.createSpan({ cls: 'seelearn-icon-inline' }), 'play');
+        playBtn.addEventListener('click', () => {
+          this.startTestPreset(preset);
+        });
+
+        const delBtn = right.createEl('button', {
+          cls: 'clickable-icon seelearn-btn-icon',
+          title: 'Удалить тест',
+        });
+        setIcon(delBtn, 'trash');
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.plugin.storage.deleteTestPreset(preset.id);
+          new Notice(`Тест «${preset.name}» удален`);
+          this.renderAll();
+        });
+      }
+    }
   }
 
   /**
@@ -1005,12 +1098,16 @@ export class StudyView extends ItemView {
   private renderFinishedState(): void {
     const emptyBox = this.cardAreaEl.createDiv({ cls: 'seelearn-empty-box' });
     setIcon(emptyBox.createDiv({ cls: 'seelearn-empty-icon seelearn-icon-celebrate' }), 'award');
-    emptyBox.createEl('h2', { text: 'Сессия завершена!' });
-    emptyBox.createEl('p', {
-      text: this.isTestMode()
-        ? 'Вы повторили запланированные карточки по графику интервального повторения.'
-        : 'Вы изучили все карточки в выбранной области.',
-    });
+    const titleText = this.activePresetName
+      ? `Тест «${this.activePresetName}» завершён!`
+      : 'Сессия завершена!';
+    emptyBox.createEl('h2', { text: titleText });
+    const subtitleText = this.activePresetName
+      ? 'Результаты прохождения теста зафиксированы в статистике.'
+      : this.isTestMode()
+      ? 'Вы повторили запланированные карточки по графику интервального повторения.'
+      : 'Вы изучили все карточки в выбранной области.';
+    emptyBox.createEl('p', { text: subtitleText });
 
     const statsGrid = emptyBox.createDiv({ cls: 'seelearn-stats-grid' });
 
@@ -1444,21 +1541,50 @@ topics:
     this.renderAll();
   }
 
-  private shuffleQueue(): void {
+  public shuffleQueue(): void {
     if (this.sessionQueue.length <= 1) return;
 
-    this.sessionQueue = this.plugin.settings.interleaveTopics
-      ? interleaveCards(this.sessionQueue)
-      : fisherYatesShuffle(this.sessionQueue);
+    if (this.sessionState === 'active') {
+      const before = this.sessionQueue.slice(0, this.currentIndex + 1);
+      const remaining = this.sessionQueue.slice(this.currentIndex + 1);
+      if (remaining.length > 1) {
+        const shuffledRemaining = this.plugin.settings.interleaveTopics
+          ? interleaveCards(remaining)
+          : fisherYatesShuffle(remaining);
+        this.sessionQueue = [...before, ...shuffledRemaining];
+        new Notice('Оставшиеся карточки в очереди перемешаны');
+        this.renderAll();
+      } else {
+        new Notice('В очереди недостаточно оставшихся карточек для перемешивания');
+      }
+    } else {
+      this.sessionQueue = this.plugin.settings.interleaveTopics
+        ? interleaveCards(this.sessionQueue)
+        : fisherYatesShuffle(this.sessionQueue);
+      this.currentIndex = 0;
+      this.isFlipped = false;
+      new Notice(
+        this.plugin.settings.interleaveTopics
+          ? 'Колода перемешана (с чередованием тем)'
+          : 'Колода перемешана (Фишер-Йетс)'
+      );
+      this.renderAll();
+    }
+  }
 
-    this.currentIndex = 0;
-    this.isFlipped = false;
-    new Notice(
-      this.plugin.settings.interleaveTopics
-        ? 'Колода перемешана (с чередованием тем)'
-        : 'Колода перемешана (Фишер-Йетс)'
-    );
-    this.renderAll();
+  public shuffleQueueAction(): void {
+    this.shuffleQueue();
+  }
+
+  public startTestPreset(preset: TestPreset): void {
+    this.selectedScope = preset.scope;
+    this.selectedTags = new Set(preset.tags);
+    this.srsFilter = 'all';
+    this.plugin.settings.studyMode = 'test';
+    this.activePresetName = preset.name;
+    this.plugin.storage.recordTestPresetRun(preset.id);
+    new Notice(`Запуск теста «${preset.name}»`);
+    this.startSession();
   }
 
   private async openCardInNote(card: Flashcard): Promise<void> {
@@ -1848,4 +1974,172 @@ class QuickEditCardModal extends Modal {
     this.contentEl.empty();
   }
 }
+
+/**
+ * Modal window explaining the SRS methodology, SM-2 intervals, due queue criteria, and leeches.
+ */
+export class SRSMethodologyModal extends Modal {
+  constructor(app: App) {
+    super(app);
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass('seelearn-methodology-modal');
+
+    contentEl.createEl('h2', { text: 'Справка: Методология SeeLearn и интервальное повторение' });
+
+    const sec1 = contentEl.createDiv({ cls: 'seelearn-methodology-section' });
+    sec1.createEl('h3', { text: '📅 Когда карточка попадает в очередь «К повторению»?' });
+    sec1.createEl('p', {
+      text: 'Алгоритм интервального повторения (SM-2) формирует график на основе забывания по кривой Эббингауза:',
+    });
+    const ul1 = sec1.createEl('ul');
+    ul1.createEl('li', {
+      text: 'Новая карточка: при первом уверенном ответе (Хорошо/Легко) следующий повтор назначается на следующий день (+1 день). Завтра она автоматически появится в «К повторению».',
+    });
+    ul1.createEl('li', {
+      text: 'Зрелая карточка: дата повтора вычисляется как Дата + Интервал дней. Как только наступает запланированный день (или если вы пропустили день), карточка переходит в статус «К повторению».',
+    });
+    ul1.createEl('li', {
+      text: 'Забытая карточка (Снова [1]): если вы нажали «Снова», интервал сразу сбрасывается на 1 день. Карточка возвращается в конец текущей сессии через шаг requeue, а на следующий день снова требует повторения.',
+    });
+
+    const sec2 = contentEl.createDiv({ cls: 'seelearn-methodology-section' });
+    sec2.createEl('h3', { text: '🎯 Оценки сложности в режиме «Проверка знаний»' });
+    const ul2 = sec2.createEl('ul');
+    ul2.createEl('li', {
+      text: '[1] Снова: ответ забыт. Сброс интервала на 1 день, штраф к фактору легкости (-0.2 EF), возврат в очередь текущей сессии.',
+    });
+    ul2.createEl('li', {
+      text: '[2] Трудно: ответ вспомнили с заметным усилием. Минимальный прирост интервала (1.2×), EF уменьшается (-0.15).',
+    });
+    ul2.createEl('li', {
+      text: '[3] Хорошо: стандартный уверенный ответ. Интервал умножается на EF (1 день → 6 дней → интервал × EF).',
+    });
+    ul2.createEl('li', {
+      text: '[4] Легко: мгновенный ответ без пауз. Бонус к фактору легкости (+0.15 EF) и ускоренный рост интервала (интервал × EF × 1.3).',
+    });
+
+    const sec3 = contentEl.createDiv({ cls: 'seelearn-methodology-section' });
+    sec3.createEl('h3', { text: '⚡ Карточки-пиявки (Leeches)' });
+    sec3.createEl('p', {
+      text: 'Если карточка была забыта 4 и более раз (настраиваемый порог), она отмечается как пиявка. Это верный сигнал, что вопрос сформулирован слишком широко, двусмысленно или содержит лишнюю информацию. Рекомендуется нажать «Изменить» и разбить её на атомарные тезисы или оформить через клоуз-пропуски {{c1::...}}.',
+    });
+
+    const sec4 = contentEl.createDiv({ cls: 'seelearn-methodology-section' });
+    sec4.createEl('h3', { text: '🔍 Фильтры очереди' });
+    const ul4 = sec4.createEl('ul');
+    ul4.createEl('li', {
+      text: 'Все: полный охват карточек в текущей заметке или папке с учётом выбранных тегов.',
+    });
+    ul4.createEl('li', {
+      text: 'К повторению: только созревшие на сегодня карточки.',
+    });
+    ul4.createEl('li', {
+      text: 'Новые: карточки, которые вы ещё ни разу не изучали.',
+    });
+
+    const btnRow = contentEl.createDiv({ cls: 'seelearn-modal-btn-row' });
+    const okBtn = btnRow.createEl('button', {
+      cls: 'seelearn-nav-btn mod-cta',
+      text: 'Понятно',
+    });
+    okBtn.addEventListener('click', () => this.close());
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+/**
+ * Modal window to save current filtered selection of cards into a named Test Preset.
+ */
+export class SaveTestModal extends Modal {
+  private name: string = '';
+  private targetScope: string;
+  private tags: string[];
+  private onSave: (preset: TestPreset) => void;
+
+  constructor(
+    app: App,
+    currentScope: string,
+    currentTags: string[],
+    onSave: (preset: TestPreset) => void
+  ) {
+    super(app);
+    this.targetScope = currentScope;
+    this.tags = [...currentTags];
+    this.onSave = onSave;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass('seelearn-save-test-modal');
+
+    contentEl.createEl('h2', { text: 'Сохранить набор карточек в Тест' });
+
+    let scopeDesc = 'Все заметки';
+    if (this.targetScope.startsWith('folder:')) {
+      scopeDesc = `Папка: ${this.targetScope.substring(7)}`;
+    } else if (this.targetScope.startsWith('file:')) {
+      scopeDesc = `Заметка: ${this.targetScope.substring(5).split('/').pop()}`;
+    }
+
+    const infoBox = contentEl.createDiv({ cls: 'seelearn-preset-info-box' });
+    infoBox.createEl('p', { text: `Область: ${scopeDesc}` });
+    infoBox.createEl('p', {
+      text: `Теги: ${this.tags.length > 0 ? this.tags.map((t) => '#' + t).join(' ') : 'Все темы'}`,
+    });
+
+    new Setting(contentEl)
+      .setName('Название теста')
+      .setDesc('Введите название теста для быстрого запуска из списка.')
+      .addText((text) =>
+        text
+          .setPlaceholder('Например: Экзамен по биохимии — Раздел 2')
+          .setValue(this.name)
+          .onChange((val) => {
+            this.name = val;
+          })
+      );
+
+    const btnRow = contentEl.createDiv({ cls: 'seelearn-modal-btn-row' });
+    const cancelBtn = btnRow.createEl('button', {
+      cls: 'seelearn-nav-btn',
+      text: 'Отмена',
+    });
+    cancelBtn.addEventListener('click', () => this.close());
+
+    const saveBtn = btnRow.createEl('button', {
+      cls: 'seelearn-nav-btn mod-cta',
+      text: 'Сохранить тест',
+    });
+    saveBtn.addEventListener('click', () => {
+      const trimmedName = this.name.trim();
+      if (!trimmedName) {
+        new Notice('Пожалуйста, укажите название теста');
+        return;
+      }
+      const preset: TestPreset = {
+        id: 'test_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6),
+        name: trimmedName,
+        scope: this.targetScope,
+        tags: this.tags,
+        createdAt: new Date().toISOString(),
+        runsCount: 0,
+      };
+      this.onSave(preset);
+      this.close();
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
 

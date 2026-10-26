@@ -119,8 +119,8 @@ What does yield do in Python?
   assert.ok(card2.tags.includes('python'));
 });
 
-test('parseCardsFromMarkdown allows front-only info cards and validates missing front', () => {
-  // Front-only info card (valid!)
+test('parseCardsFromMarkdown requires both @front and @back for regular cards', () => {
+  // Front-only without back is no longer allowed for non-cloze cards
   const mdInfo = `
 %% @card #info #important %%
 %% @front %%
@@ -128,10 +128,9 @@ Formula: E = mc^2
 %% @end %%
 `;
   const resultInfo = parseCardsFromMarkdown('notes/info.md', 'info.md', mdInfo, []);
-  assert.strictEqual(resultInfo.warnings.length, 0);
-  assert.strictEqual(resultInfo.cards.length, 1);
-  assert.strictEqual(resultInfo.cards[0].hasBack, false);
-  assert.strictEqual(resultInfo.cards[0].front, 'Formula: E = mc^2');
+  assert.strictEqual(resultInfo.cards.length, 0);
+  assert.strictEqual(resultInfo.warnings.length, 1);
+  assert.ok(resultInfo.warnings[0].message.includes('отсутствует обязательный блок @back'));
 
   // Missing @front (invalid!)
   const mdMissingFront = `
@@ -144,6 +143,54 @@ Only back without front...
   assert.strictEqual(resultMissing.cards.length, 0);
   assert.strictEqual(resultMissing.warnings.length, 1);
   assert.ok(resultMissing.warnings[0].message.includes('отсутствует обязательный блок @front'));
+});
+
+test('parseCardsFromMarkdown allows cloze cards without @front and @back markers', () => {
+  const mdCloze = `
+%% @card #grammar %%
+The past tense of "go" is {{c1::went}}.
+%% @end %%
+`;
+  const result = parseCardsFromMarkdown('notes/grammar.md', 'grammar.md', mdCloze, []);
+  assert.strictEqual(result.warnings.length, 0);
+  assert.strictEqual(result.cards.length, 1);
+  assert.strictEqual(result.cards[0].isCloze, true);
+  assert.ok(result.cards[0].front.includes('<span class="seelearn-cloze-target">[...]</span>'));
+  assert.ok(result.cards[0].back.includes('<span class="seelearn-cloze-revealed">went</span>'));
+});
+
+test('parseCardsFromMarkdown supports hiding cards completely with %%%% comment fences', () => {
+  const mdHidden = `
+# Lecture Note
+Some public text here.
+
+%%%%
+@card #biology
+@front
+What is the powerhouse of the cell?
+@back
+Mitochondria.
+@end
+%%%%
+
+Another note paragraph.
+
+%%%%
+@card #history
+The Roman empire fell in {{c1::476}} AD.
+@end
+%%%%
+`;
+  const result = parseCardsFromMarkdown('notes/lecture.md', 'lecture.md', mdHidden, []);
+  assert.strictEqual(result.warnings.length, 0);
+  assert.strictEqual(result.cards.length, 2);
+
+  assert.strictEqual(result.cards[0].front, 'What is the powerhouse of the cell?');
+  assert.strictEqual(result.cards[0].back, 'Mitochondria.');
+  assert.ok(result.cards[0].tags.includes('biology'));
+
+  assert.strictEqual(result.cards[1].isCloze, true);
+  assert.ok(result.cards[1].back.includes('476'));
 });
 
 

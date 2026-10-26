@@ -27,6 +27,18 @@ export interface StudyStreakStats {
   dailyActivity: Record<string, number>; // YYYY-MM-DD -> count
 }
 
+export type TemplateStyle = 'comment' | 'plain';
+
+export interface TestPreset {
+  id: string;
+  name: string;
+  scope: string; // '' for all, 'folder:...' or 'file:...'
+  tags: string[];
+  createdAt: string;
+  lastRun?: string;
+  runsCount: number;
+}
+
 export interface SeeLearnSettings {
   triggerProperty: string;
   triggerValue: string;
@@ -39,6 +51,7 @@ export interface SeeLearnSettings {
   interleaveTopics: boolean;
   enable3DFlip: boolean;
   enableCloze: boolean;
+  templateStyle: TemplateStyle;
   leechThreshold: number;
   requeueStep: number;
   maxNewPerSession: number;
@@ -57,6 +70,7 @@ export const DEFAULT_SETTINGS: SeeLearnSettings = {
   interleaveTopics: true,
   enable3DFlip: true,
   enableCloze: true,
+  templateStyle: 'comment',
   leechThreshold: 4,
   requeueStep: 3,
   maxNewPerSession: 25,
@@ -67,12 +81,14 @@ export interface SeeLearnStorageData {
   version: number;
   settings: SeeLearnSettings;
   progress: Record<string, CardProgressRecord>;
+  testPresets?: Record<string, TestPreset>;
 }
 
 export const DEFAULT_STORAGE_DATA: SeeLearnStorageData = {
   version: 1,
   settings: DEFAULT_SETTINGS,
   progress: {},
+  testPresets: {},
 };
 
 export interface Flashcard {

@@ -209,6 +209,20 @@ export class SeeLearnSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(containerEl)
+      .setName('Формат шаблона карточки по умолчанию')
+      .setDesc('Формат вставки шаблона по горячей клавише: в комментариях (%% @card %% ... %% @end %%) или открытым текстом.')
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption('comment', 'В комментариях (%% @card %% ... %%) — скрыто в режиме чтения')
+          .addOption('plain', 'Открытый текст (@card ... @end)')
+          .setValue(this.plugin.settings.templateStyle || 'comment')
+          .onChange(async (value: string) => {
+            this.plugin.settings.templateStyle = value as any;
+            await this.plugin.saveSettings();
+          })
+      );
+
     containerEl.createEl('h3', { text: 'Хранилище данных и статистика' });
 
     const stats = this.plugin.storage.getStats();

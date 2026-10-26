@@ -36,18 +36,18 @@ export function parseMarkerLine(line: string): MarkerMatch | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
 
+  // Ignore lines that are purely comment delimiters (e.g. %%, %%%, %%%%)
+  if (/^%{2,}$/.test(trimmed)) return null;
+
   // Strip blockquote / callout prefix (e.g. "> ", ">> ")
   let content = trimmed.replace(/^(?:>\s*)+/, '').trim();
   if (!content) return null;
 
-  // Check and strip optional enclosing %% ... %%
-  if (content.startsWith('%%')) {
-    content = content.substring(2);
-    if (content.endsWith('%%')) {
-      content = content.substring(0, content.length - 2);
-    }
-    content = content.trim();
-  }
+  // If after stripping blockquote it is purely comment delimiters
+  if (/^%{2,}$/.test(content)) return null;
+
+  // Check and strip optional enclosing or leading/trailing % (supporting %%, %%%, %%%%, etc.)
+  content = content.replace(/^%{2,}\s*/, '').replace(/\s*%{2,}$/, '').trim();
 
   const match = content.match(/^@(card|front|back|end)(?:\s+(.*)|\s*$)/i);
   if (!match) return null;
@@ -55,9 +55,9 @@ export function parseMarkerLine(line: string): MarkerMatch | null {
   const type = match[1].toLowerCase() as MarkerType;
   let args = match[2] ? match[2].trim() : undefined;
 
-  // Clean trailing %% in case user had %% @card #tag %% without whitespace before %%
-  if (args && args.endsWith('%%')) {
-    args = args.substring(0, args.length - 2).trim();
+  // Clean trailing % in case user had %%%% @card #tag %%%% without whitespace before %
+  if (args) {
+    args = args.replace(/\s*%{2,}$/, '').trim();
   }
 
   return { type, args };
@@ -210,6 +210,7 @@ export function parseCardsFromMarkdown(
   let cardStartLine = 0;
   let cardArgs = '';
   let currentSection: 'none' | 'front' | 'back' = 'none';
+  let unsectionedLines: string[] = [];
   let frontLines: string[] = [];
   let backLines: string[] = [];
   let frontCount = 0;
@@ -226,6 +227,11 @@ export function parseCardsFromMarkdown(
       inCodeBlock = !inCodeBlock;
     }
 
+    // If line is purely comment delimiters (%% or %%%%), skip it so it doesn't pollute content
+    if (!inCodeBlock && /^%{2,}$/.test(trimmed.replace(/^(?:>\s*)+/, '').trim())) {
+      continue;
+    }
+
     const marker = parseMarkerLine(line);
 
     // If inside code fence, ignore @front and @back lines to prevent false matches inside code snippets
@@ -234,6 +240,8 @@ export function parseCardsFromMarkdown(
         frontLines.push(line);
       } else if (currentSection === 'back') {
         backLines.push(line);
+      } else if (currentSection === 'none' && inCard) {
+        unsectionedLines.push(line);
       }
       continue;
     }
@@ -255,6 +263,7 @@ export function parseCardsFromMarkdown(
           cardStartLine = lineNumber;
           cardArgs = marker.args || '';
           currentSection = 'none';
+          unsectionedLines = [];
           frontLines = [];
           backLines = [];
           frontCount = 0;
@@ -303,16 +312,48 @@ export function parseCardsFromMarkdown(
             break;
           }
 
-          // Validate card
+          // Determine card contents and validity
+          let rawFrontContent = frontLines.join('\n').trim();
+          let rawBackContent = backLines.join('\n').trim();
+          const unsectionedContent = unsectionedLines.join('\n').trim();
+
           const cardErrors: string[] = [];
+          let isCloze = false;
+
           if (frontCount === 0) {
-            cardErrors.push('отсутствует обязательный блок @front');
-          } else if (frontCount > 1) {
-            cardErrors.push(`обнаружено несколько блоков @front (${frontCount})`);
+            if (hasClozeDeletions(unsectionedContent)) {
+              isCloze = true;
+              rawFrontContent = unsectionedContent;
+              if (backCount > 1) {
+                cardErrors.push(`обнаружено несколько блоков @back (${backCount})`);
+              }
+            } else {
+              if (backCount === 0) {
+                cardErrors.push('отсутствуют обязательные блоки @front и @back (двусторонняя карточка должна содержать и @front, и @back, либо клоуз-пропуски {{c1::...}})');
+              } else {
+                cardErrors.push('отсутствует обязательный блок @front');
+              }
+            }
+          } else {
+            if (frontCount > 1) {
+              cardErrors.push(`обнаружено несколько блоков @front (${frontCount})`);
+            }
+            if (backCount > 1) {
+              cardErrors.push(`обнаружено несколько блоков @back (${backCount})`);
+            }
+
+            isCloze = hasClozeDeletions(rawFrontContent);
+
+            if (backCount === 0 && !isCloze) {
+              cardErrors.push('отсутствует обязательный блок @back (двусторонняя карточка должна содержать и @front, и @back)');
+            }
           }
 
-          if (backCount > 1) {
-            cardErrors.push(`обнаружено несколько блоков @back (${backCount})`);
+          if (cardErrors.length === 0 && rawFrontContent.length === 0) {
+            cardErrors.push('пустой блок вопроса (@front)');
+          }
+          if (cardErrors.length === 0 && !isCloze && rawBackContent.length === 0) {
+            cardErrors.push('пустой блок ответа (@back)');
           }
 
           if (cardErrors.length > 0) {
@@ -322,15 +363,11 @@ export function parseCardsFromMarkdown(
               message: `Невалидная карточка (строки ${cardStartLine}-${lineNumber}): ${cardErrors.join(', ')}`,
             });
           } else {
-            // Valid card! (either two-sided or front-only info card)
+            // Valid card!
             const localTags = extractLocalTags(cardArgs);
             const mergedTags = Array.from(new Set([...globalTopics, ...localTags]));
-
-            const rawFrontContent = frontLines.join('\n').trim();
-            const rawBackContent = backLines.join('\n').trim();
             const customId = extractCustomId(cardArgs);
 
-            const isCloze = hasClozeDeletions(rawFrontContent);
             const clozeIndices = isCloze ? getClozeIndices(rawFrontContent) : [];
 
             if (isCloze && clozeIndices.length > 1) {
@@ -417,10 +454,10 @@ export function parseCardsFromMarkdown(
             }
           }
 
-
           // Reset card state
           inCard = false;
           currentSection = 'none';
+          unsectionedLines = [];
           frontLines = [];
           backLines = [];
           frontCount = 0;
@@ -433,6 +470,8 @@ export function parseCardsFromMarkdown(
         frontLines.push(line);
       } else if (currentSection === 'back') {
         backLines.push(line);
+      } else if (currentSection === 'none') {
+        unsectionedLines.push(line);
       }
     }
   }
