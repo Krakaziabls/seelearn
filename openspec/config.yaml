@@ -1,0 +1,98 @@
+schema: spec-driven
+
+# ==============================================================================
+# OpenSpec Project Configuration — SeeLearn (Obsidian Flashcards Plugin)
+# ==============================================================================
+
+# Project context injected into all OpenSpec artifact instructions (max 50KB)
+context: |
+  SeeLearn is an advanced, native Obsidian plugin for interactive flashcards and
+  spaced repetition (SRS), converting marked sections of markdown notes into
+  study cards with zero note pollution.
+
+  1. Core Architectural Constraints:
+     - Zero Note Pollution: Never inject block anchors (^q-xxxx), metadata,
+       or timestamps into user markdown files. All progress, history, and test
+       presets must be stored exclusively in `<Vault>/.obsidian/plugins/seelearn/data.json`.
+     - Dual Syntax & Reading Privacy:
+       * Ordinary cards require both @front and @back: `%% @card ... %% %% @front %% ... %% @back %% ... %% @end %%`
+         or open format `@card ... @front ... @back ... @end`.
+       * Cloze deletion cards (`{{c1::answer}}`, `{{c1::answer::hint}}`, `==answer==`)
+         can omit @front and @back completely. Multi-cloze cards (c1, c2) split into
+         separate virtual cards with independent SRS progress.
+       * Complete note privacy: Multi-line comment fences `%%%% ... %%%%` or `%% ... %%`
+         can enclose cards to make them completely invisible in Obsidian Reading View.
+     - Native Obsidian Experience:
+       * All styles must use Obsidian CSS variables (`--background-primary`,
+         `--interactive-accent`, `--text-normal`, `--background-modifier-border`, etc.).
+       * Never use external styling frameworks or hardcoded theme colors.
+       * Use native Lucide SVG icons via Obsidian API `setIcon(el, 'icon-name')` instead of emojis.
+       * All markdown rendering inside cards must use `MarkdownRenderer.render` bound
+         to an active Obsidian `Component` lifecycle to guarantee complete cleanup and zero memory leaks.
+
+  2. Technical Stack & Environment:
+     - Runtime / Language: TypeScript (strict mode, target ES2020), Node.js v20 (via nvm).
+     - Bundler: esbuild (`esbuild.config.mjs` for production bundle, `esbuild.test.mjs` for tests).
+     - Test Framework: Native Node.js test runner (`node:test`, `node:assert`).
+     - Core API: Obsidian API (`obsidian`).
+
+  3. Codebase Structure & Responsibilities:
+     - `src/types.ts`: Single source of truth for interfaces and data contracts
+       (`Flashcard`, `CardProgressRecord`, `SeeLearnSettings`, `TestPreset`, `SeeLearnStorageData`).
+     - `src/parser.ts`: Deterministic parser for markdown markers, tag extraction
+       (local hashtags and frontmatter global topics), and validation warnings.
+     - `src/hash.ts`: FNV-1a 64-bit deterministic card ID generator resistant to line shifts.
+     - `src/cloze.ts`: Cloze detection, multi-index extraction, front/back mask rendering.
+     - `src/srs.ts`: Pure mathematical SuperMemo-2 (SM-2) engine, interval preview formatters,
+       and leech detection.
+     - `src/storage.ts`: `StorageManager` handling `data.json`, debounced file writes (`scheduleSave`),
+       ID migration on note renames, garbage collection, and test presets CRUD.
+     - `src/shuffle.ts`: Fisher-Yates shuffle algorithm and topic interleaving.
+     - `src/view.ts`: `StudyView` (`ItemView`) managing the 3-phase session lifecycle:
+       * Phase 1: Lobby (Deck Overview) — queue stats, streak banner, test presets, quick launch.
+       * Phase 2: Active Session — frozen queue, progress bar, side arrows, 3D flip, inline edit, SRS ratings.
+       * Phase 3: Finished State — completion dashboard, accuracy %, heatmap, retry failed cards.
+       * Modals: `QuickEditCardModal` (side-by-side editor), `SRSMethodologyModal` (SRS guide), `SaveTestModal`.
+     - `src/main.ts`: Plugin entrypoint, event handling (`vault.on`, `metadataCache.on`),
+       hotkey command palette registration, view mounting.
+     - `src/settings.ts`: `SeeLearnSettingTab` configuration tab in Obsidian settings.
+     - `styles.css`: Scoped stylesheet for all card views, responsive lobby grid, animations, and tables.
+
+# Per-artifact rules applied when authoring OpenSpec planning artifacts
+rules:
+  proposal:
+    - "Focus strictly on user problem, study efficiency, or UX polish."
+    - "Explicitly define what is in scope and what is out of scope."
+    - "Preserve native Obsidian keyboard-first and touch-first workflows."
+    - "Avoid proposing third-party runtime dependencies; prefer standard Obsidian APIs."
+
+  specs:
+    - "Specify concrete, testable requirements and acceptance criteria (Given / When / Then)."
+    - "Cover desktop interactions (hotkeys, mouse) and mobile touch gestures (swipes, taps)."
+    - "Account for edge cases: empty cards, corrupted markup, long content scrolling, theme changes."
+    - "Ensure backwards compatibility with existing data.json schemas."
+
+  design:
+    - "Maintain clear architectural separation: pure functions for SRS/cloze/parser, isolated storage, and decoupled view components."
+    - "Never bypass Obsidian Component lifecycle during markdown rendering."
+    - "Use Obsidian CSS variables exclusively for all visual styling."
+    - "Verify that card height remains strictly constrained within .seelearn-card-area with scrollable body."
+
+  tasks:
+    - "Break implementation into logical phases: Types -> Parser/Logic -> State/Storage -> UI/View -> Styles -> Tests -> Docs."
+    - "Every change to business logic or parsing must include automated unit tests in tests/."
+    - "Every task list must conclude with verification: npm test and npm run build must pass cleanly."
+
+# Per-operation guidance for apply and archive workflows
+operations:
+  apply:
+    guidance:
+      - "Always execute build and tests in Node.js v20 environment: bash -c 'source ~/.nvm/nvm.sh && nvm use 20 && npm run build && npm test'."
+      - "Maintain 100% test pass rate at all times (zero failing tests)."
+      - "Do not edit user markdown files in the vault; only modify plugin source files and unit tests."
+      - "Ensure changes work smoothly on macOS, Windows, Linux, iOS, and Android."
+  archive:
+    guidance:
+      - "Confirm that all tasks in tasks.md are completed and verified."
+      - "Sync any newly introduced or modified capabilities to openspec/specs/."
+      - "Update manifest.json, package.json, README.md, and TBD.md if the change constitutes a release."
