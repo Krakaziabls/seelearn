@@ -618,6 +618,8 @@ button.seelearn-nav-help-btn:hover {
 .seelearn-answer-section {
   animation: seelearnFadeIn 0.22s ease-in-out;
   margin-top: 14px;
+  width: 100%;
+  flex-shrink: 0;
 }
 
 .seelearn-content {
@@ -628,6 +630,7 @@ button.seelearn-nav-help-btn:hover {
   width: 100%;
   overflow-x: auto;
   max-width: 100%;
+  flex-shrink: 0;
 }
 
 .seelearn-front {
