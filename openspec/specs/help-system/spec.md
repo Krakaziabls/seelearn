@@ -9,10 +9,11 @@ Provides a permanent, responsive entry point to documentation and cheatsheet not
 A persistent circular help button must be located in the left group of the navigation bar.
 
 #### Scenario: Rendering help button
-- **WHEN** the navigation bar or top toolbar renders
-- **THEN** a circular button \`.seelearn-nav-help-btn\` is rendered with the Lucide \`help-circle\` icon
+- **WHEN** the study view renders in any state (lobby, active session, finished)
+- **THEN** the bottom navigation bar \`.seelearn-nav-bar\` is always displayed
+- **AND** a circular button \`.seelearn-nav-help-btn\` is rendered in its left group with the Lucide \`help-circle\` icon
 - **AND** the tooltip says "Шпаргалка и справка"
-- **AND** computed styles adhere to 28x28px circular dimensions (\`border-radius: 50%\`) using Obsidian CSS variables.
+- **AND** computed styles adhere to 28x28px circular dimensions (\`border-radius: 50%\`) with standard 16px horizontal padding.
 
 ### Requirement: Opening and Focusing the Cheatsheet Note
 Clicking the help button must reliably display the cheatsheet note in Obsidian editor view.

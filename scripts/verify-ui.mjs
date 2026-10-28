@@ -55,14 +55,26 @@ async function run() {
   console.log('Inspecting UI components...');
   const domCheck = await send('Runtime.evaluate', {
     expression: `(() => {
-      const helpBtn = document.querySelector('.seelearn-nav-help-btn');
+      const navBar = document.querySelector('.seelearn-nav-bar');
+      const helpBtnInNav = document.querySelector('.seelearn-nav-bar .seelearn-nav-help-btn');
+      const helpBtnInToolbar = document.querySelector('.seelearn-toolbar .seelearn-nav-help-btn');
       const oldLink = document.querySelector('.seelearn-methodology-link');
       const lobbyBox = document.querySelector('.seelearn-lobby-box');
-      const oldModal = document.querySelector('.seelearn-methodology-modal');
 
+      let navBarStyles = null;
       let helpBtnStyles = null;
-      if (helpBtn) {
-        const computed = window.getComputedStyle(helpBtn);
+      if (navBar) {
+        const computed = window.getComputedStyle(navBar);
+        navBarStyles = {
+          display: computed.display,
+          justifyContent: computed.justifyContent,
+          paddingLeft: computed.paddingLeft,
+          paddingRight: computed.paddingRight,
+        };
+      }
+
+      if (helpBtnInNav) {
+        const computed = window.getComputedStyle(helpBtnInNav);
         helpBtnStyles = {
           width: computed.width,
           height: computed.height,
@@ -70,16 +82,18 @@ async function run() {
           display: computed.display,
           color: computed.color,
           backgroundColor: computed.backgroundColor,
-          title: helpBtn.getAttribute('title') || helpBtn.getAttribute('aria-label')
+          title: helpBtnInNav.getAttribute('title') || helpBtnInNav.getAttribute('aria-label')
         };
       }
 
       return {
-        hasHelpBtn: !!helpBtn,
+        hasNavBar: !!navBar,
+        navBarStyles,
+        hasHelpBtnInNav: !!helpBtnInNav,
+        hasHelpBtnInToolbar: !!helpBtnInToolbar,
         helpBtnStyles,
         hasOldLink: !!oldLink,
-        hasLobbyBox: !!lobbyBox,
-        hasOldModal: !!oldModal
+        hasLobbyBox: !!lobbyBox
       };
     })()`,
     returnByValue: true,

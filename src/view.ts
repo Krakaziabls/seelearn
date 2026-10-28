@@ -483,18 +483,7 @@ export class StudyView extends ItemView {
       await this.plugin.reloadAllCards();
     });
 
-    // 5. Help / Cheatsheet Button (Persistent in navbar)
-    const helpBtn = leftGroup.createEl('button', {
-      cls: 'clickable-icon seelearn-btn-icon seelearn-nav-help-btn',
-      title: 'Шпаргалка и справка',
-    });
-    setIcon(helpBtn, 'help-circle');
-    setTooltip(helpBtn, 'Шпаргалка и справка');
-    helpBtn.addEventListener('click', async () => {
-      await OnboardingManager.openCheatsheetNote(this.app);
-    });
-
-    // 6. Scoped SRS Queue Filter Pills (reflects ONLY cards in selected scope!)
+    // 5. Scoped SRS Queue Filter Pills (reflects ONLY cards in selected scope!)
     if (isTest) {
       const scopedCards = this.plugin.cards.filter((c) => this.cardMatchesScope(c));
       const breakdown = this.plugin.storage.getSRSBreakdown(scopedCards);
@@ -1261,15 +1250,31 @@ topics:
    */
   private renderNavBar(): void {
     this.navBarEl.empty();
-
-    if (this.sessionState !== 'active' || this.sessionQueue.length === 0) {
-      this.navBarEl.style.display = 'none';
-      return;
-    }
     this.navBarEl.style.display = 'flex';
 
-    const currentCard = this.sessionQueue[this.currentIndex];
+    // 1. Left group: persistent help button
+    const leftNav = this.navBarEl.createDiv({ cls: 'seelearn-nav-group left' });
+    const helpBtn = leftNav.createEl('button', {
+      cls: 'clickable-icon seelearn-btn-icon seelearn-nav-help-btn',
+      title: 'Шпаргалка и справка',
+    });
+    setIcon(helpBtn, 'help-circle');
+    setTooltip(helpBtn, 'Шпаргалка и справка');
+    helpBtn.addEventListener('click', async () => {
+      await OnboardingManager.openCheatsheetNote(this.app);
+    });
+
+    // 2. Center group: navigation and rating buttons (populated in active session)
     const centerNav = this.navBarEl.createDiv({ cls: 'seelearn-nav-group center' });
+
+    // 3. Right group: symmetrical spacer to guarantee true center alignment
+    this.navBarEl.createDiv({ cls: 'seelearn-nav-group right' });
+
+    if (this.sessionState !== 'active' || this.sessionQueue.length === 0) {
+      return;
+    }
+
+    const currentCard = this.sessionQueue[this.currentIndex];
 
     if (!this.isTestMode()) {
       // LEARN MODE (Режим "Ботать" по умолчанию)

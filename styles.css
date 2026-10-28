@@ -724,21 +724,41 @@ button.seelearn-nav-help-btn:hover {
    -------------------------------------------------------------------------- */
 .seelearn-nav-bar {
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
   align-items: center;
-  padding: 12px 20px;
+  padding: 12px 16px;
   background-color: transparent;
   border-top: none;
-  gap: 16px;
-  flex-wrap: wrap;
+  min-height: 52px;
   box-shadow: none;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .seelearn-nav-group {
   display: flex;
   align-items: center;
+}
+
+.seelearn-nav-group.left,
+.seelearn-nav-group.right {
+  flex: 1 1 0;
+  min-width: 32px;
+}
+
+.seelearn-nav-group.left {
+  justify-content: flex-start;
+}
+
+.seelearn-nav-group.right {
+  justify-content: flex-end;
+}
+
+.seelearn-nav-group.center {
+  flex: 0 0 auto;
   justify-content: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .seelearn-nav-btn {
