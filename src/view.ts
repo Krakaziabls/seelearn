@@ -5,6 +5,7 @@ import {
   Component,
   TFile,
   setIcon,
+  setTooltip,
   Notice,
   Modal,
   App,
@@ -14,6 +15,7 @@ import type SeeLearnPlugin from './main';
 import { CardProgressRecord, Flashcard, SRSQueueFilter, TestPreset, ValidationWarning } from './types';
 import { fisherYatesShuffle, interleaveCards } from './shuffle';
 import { getSRSIntervalPreviews, isCardDue, isCardLeech, isCardNew, SRSRating } from './srs';
+import { OnboardingManager } from './onboarding';
 
 export const VIEW_TYPE_SEELEARN = 'seelearn-study-view';
 
@@ -481,7 +483,18 @@ export class StudyView extends ItemView {
       await this.plugin.reloadAllCards();
     });
 
-    // 5. Scoped SRS Queue Filter Pills (reflects ONLY cards in selected scope!)
+    // 5. Help / Cheatsheet Button (Persistent in navbar)
+    const helpBtn = leftGroup.createEl('button', {
+      cls: 'clickable-icon seelearn-btn-icon seelearn-nav-help-btn',
+      title: 'Шпаргалка и справка',
+    });
+    setIcon(helpBtn, 'help-circle');
+    setTooltip(helpBtn, 'Шпаргалка и справка');
+    helpBtn.addEventListener('click', async () => {
+      await OnboardingManager.openCheatsheetNote(this.app);
+    });
+
+    // 6. Scoped SRS Queue Filter Pills (reflects ONLY cards in selected scope!)
     if (isTest) {
       const scopedCards = this.plugin.cards.filter((c) => this.cardMatchesScope(c));
       const breakdown = this.plugin.storage.getSRSBreakdown(scopedCards);
@@ -518,15 +531,6 @@ export class StudyView extends ItemView {
         this.srsFilter = 'new';
         this.sessionState = 'lobby';
         this.resetSession();
-      });
-
-      const helpBtn = srsGroup.createEl('button', {
-        cls: 'clickable-icon seelearn-btn-icon seelearn-help-btn',
-        title: 'Справка по методологии SRS: когда карточки попадают в «К повторению», оценки и пиявки',
-      });
-      setIcon(helpBtn, 'help-circle');
-      helpBtn.addEventListener('click', () => {
-        new SRSMethodologyModal(this.app).open();
       });
     }
 
@@ -1031,15 +1035,7 @@ export class StudyView extends ItemView {
     const hintRow = lobbyBox.createDiv({ cls: 'seelearn-lobby-hint-row' });
     hintRow.createSpan({
       cls: 'seelearn-lobby-hint',
-      text: 'Нажмите Пробел или Enter для быстрого старта • ',
-    });
-    const methodologyLink = hintRow.createEl('a', {
-      cls: 'seelearn-methodology-link',
-      text: 'Как работает интервальное повторение?',
-    });
-    methodologyLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      new SRSMethodologyModal(this.app).open();
+      text: 'Нажмите Пробел или Enter для быстрого старта',
     });
 
     // Saved test presets list (for rapid testing)
@@ -1975,84 +1971,7 @@ class QuickEditCardModal extends Modal {
   }
 }
 
-/**
- * Modal window explaining the SRS methodology, SM-2 intervals, due queue criteria, and leeches.
- */
-export class SRSMethodologyModal extends Modal {
-  constructor(app: App) {
-    super(app);
-  }
 
-  onOpen(): void {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass('seelearn-methodology-modal');
-
-    contentEl.createEl('h2', { text: 'Справка: Методология SeeLearn и интервальное повторение' });
-
-    const sec1 = contentEl.createDiv({ cls: 'seelearn-methodology-section' });
-    sec1.createEl('h3', { text: '📅 Когда карточка попадает в очередь «К повторению»?' });
-    sec1.createEl('p', {
-      text: 'Алгоритм интервального повторения (SM-2) формирует график на основе забывания по кривой Эббингауза:',
-    });
-    const ul1 = sec1.createEl('ul');
-    ul1.createEl('li', {
-      text: 'Новая карточка: при первом уверенном ответе (Хорошо/Легко) следующий повтор назначается на следующий день (+1 день). Завтра она автоматически появится в «К повторению».',
-    });
-    ul1.createEl('li', {
-      text: 'Зрелая карточка: дата повтора вычисляется как Дата + Интервал дней. Как только наступает запланированный день (или если вы пропустили день), карточка переходит в статус «К повторению».',
-    });
-    ul1.createEl('li', {
-      text: 'Забытая карточка (Снова [1]): если вы нажали «Снова», интервал сразу сбрасывается на 1 день. Карточка возвращается в конец текущей сессии через шаг requeue, а на следующий день снова требует повторения.',
-    });
-
-    const sec2 = contentEl.createDiv({ cls: 'seelearn-methodology-section' });
-    sec2.createEl('h3', { text: '🎯 Оценки сложности в режиме «Проверка знаний»' });
-    const ul2 = sec2.createEl('ul');
-    ul2.createEl('li', {
-      text: '[1] Снова: ответ забыт. Сброс интервала на 1 день, штраф к фактору легкости (-0.2 EF), возврат в очередь текущей сессии.',
-    });
-    ul2.createEl('li', {
-      text: '[2] Трудно: ответ вспомнили с заметным усилием. Минимальный прирост интервала (1.2×), EF уменьшается (-0.15).',
-    });
-    ul2.createEl('li', {
-      text: '[3] Хорошо: стандартный уверенный ответ. Интервал умножается на EF (1 день → 6 дней → интервал × EF).',
-    });
-    ul2.createEl('li', {
-      text: '[4] Легко: мгновенный ответ без пауз. Бонус к фактору легкости (+0.15 EF) и ускоренный рост интервала (интервал × EF × 1.3).',
-    });
-
-    const sec3 = contentEl.createDiv({ cls: 'seelearn-methodology-section' });
-    sec3.createEl('h3', { text: '⚡ Карточки-пиявки (Leeches)' });
-    sec3.createEl('p', {
-      text: 'Если карточка была забыта 4 и более раз (настраиваемый порог), она отмечается как пиявка. Это верный сигнал, что вопрос сформулирован слишком широко, двусмысленно или содержит лишнюю информацию. Рекомендуется нажать «Изменить» и разбить её на атомарные тезисы или оформить через клоуз-пропуски {{c1::...}}.',
-    });
-
-    const sec4 = contentEl.createDiv({ cls: 'seelearn-methodology-section' });
-    sec4.createEl('h3', { text: '🔍 Фильтры очереди' });
-    const ul4 = sec4.createEl('ul');
-    ul4.createEl('li', {
-      text: 'Все: полный охват карточек в текущей заметке или папке с учётом выбранных тегов.',
-    });
-    ul4.createEl('li', {
-      text: 'К повторению: только созревшие на сегодня карточки.',
-    });
-    ul4.createEl('li', {
-      text: 'Новые: карточки, которые вы ещё ни разу не изучали.',
-    });
-
-    const btnRow = contentEl.createDiv({ cls: 'seelearn-modal-btn-row' });
-    const okBtn = btnRow.createEl('button', {
-      cls: 'seelearn-nav-btn mod-cta',
-      text: 'Понятно',
-    });
-    okBtn.addEventListener('click', () => this.close());
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
-}
 
 /**
  * Modal window to save current filtered selection of cards into a named Test Preset.

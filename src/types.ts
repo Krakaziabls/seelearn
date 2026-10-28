@@ -56,6 +56,7 @@ export interface SeeLearnSettings {
   requeueStep: number;
   maxNewPerSession: number;
   maxDuePerSession: number;
+  onboardingCompleted: boolean;
 }
 
 export const DEFAULT_SETTINGS: SeeLearnSettings = {
@@ -75,6 +76,7 @@ export const DEFAULT_SETTINGS: SeeLearnSettings = {
   requeueStep: 3,
   maxNewPerSession: 25,
   maxDuePerSession: 50,
+  onboardingCompleted: false,
 };
 
 export interface SeeLearnStorageData {

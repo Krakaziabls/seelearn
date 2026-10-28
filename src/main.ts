@@ -4,6 +4,7 @@ import { SeeLearnSettingTab } from './settings';
 import { extractGlobalTopics, parseCardsFromMarkdown, shouldIndexFile } from './parser';
 import { StudyView, VIEW_TYPE_SEELEARN } from './view';
 import { StorageManager } from './storage';
+import { OnboardingManager } from './onboarding';
 
 export default class SeeLearnPlugin extends Plugin {
   settings: SeeLearnSettings = DEFAULT_SETTINGS;
@@ -185,7 +186,17 @@ export default class SeeLearnPlugin extends Plugin {
     this.addSettingTab(new SeeLearnSettingTab(this.app, this));
 
     // Wait for Obsidian layout and metadataCache to be ready before indexing
-    this.app.workspace.onLayoutReady(() => {
+    this.app.workspace.onLayoutReady(async () => {
+      if (!this.settings.onboardingCompleted) {
+        try {
+          await OnboardingManager.ensureOnboardingAssets(this.app);
+          await OnboardingManager.openCheatsheetNote(this.app);
+          this.settings.onboardingCompleted = true;
+          await this.saveSettings();
+        } catch (e) {
+          console.error('SeeLearn: failed to initialize onboarding assets', e);
+        }
+      }
       this.reloadAllCards();
     });
 

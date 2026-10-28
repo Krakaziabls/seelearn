@@ -73,13 +73,27 @@
   color: var(--text-muted);
 }
 
-.seelearn-help-btn {
-  color: var(--text-faint);
-  transition: color 0.15s ease;
-  margin-left: 2px;
+.seelearn-nav-help-btn,
+button.seelearn-nav-help-btn {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 50% !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-muted);
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
-.seelearn-help-btn:hover {
+.seelearn-nav-help-btn:hover,
+button.seelearn-nav-help-btn:hover {
+  background-color: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
@@ -1347,16 +1361,6 @@
   gap: 4px;
 }
 
-.seelearn-methodology-link {
-  color: var(--text-accent);
-  text-decoration: underline;
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-
-.seelearn-methodology-link:hover {
-  color: var(--interactive-accent-hover, var(--text-accent));
-}
 
 .seelearn-presets-section {
   width: 100%;
@@ -1451,37 +1455,6 @@
 /* --------------------------------------------------------------------------
    Methodology Modal & Save Test Modal
    -------------------------------------------------------------------------- */
-.seelearn-methodology-modal {
-  max-width: 560px;
-}
-
-.seelearn-methodology-section {
-  margin: 16px 0;
-}
-
-.seelearn-methodology-section h3 {
-  font-size: 1.05em;
-  margin-bottom: 6px;
-}
-
-.seelearn-methodology-section p {
-  font-size: 0.9em;
-  color: var(--text-muted);
-  margin-bottom: 6px;
-  line-height: 1.45;
-}
-
-.seelearn-methodology-section ul {
-  padding-left: 20px;
-  margin: 6px 0;
-  font-size: 0.88em;
-  color: var(--text-normal);
-  line-height: 1.5;
-}
-
-.seelearn-methodology-section li {
-  margin-bottom: 4px;
-}
 
 .seelearn-save-test-modal {
   max-width: 480px;
