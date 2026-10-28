@@ -100,3 +100,48 @@ test('Fixtures: long-content-scroll.md preserves multi-paragraph content', () =>
   assert.match(cards[0].back, /Anterior limb/);
   assert.match(cards[0].back, /Charcot's artery/);
 });
+
+test('Fixtures: invalid-cards.md properly emits validation warnings and rejects malformed cards', () => {
+  const filePath = getFixturePath('invalid-cards.md');
+  const content = fs.readFileSync(filePath, 'utf-8');
+
+  const { cards, warnings } = parseCardsFromMarkdown(
+    'Notes/invalid.md',
+    'invalid.md',
+    content,
+    ['Testing']
+  );
+
+  // All 3 invalid cards should be rejected with clear warnings
+  assert.equal(cards.length, 0);
+  assert.equal(warnings.length, 3);
+  assert.match(warnings[0].message, /отсутствует обязательный блок @back/);
+  assert.match(warnings[1].message, /несколько блоков @front/);
+  assert.match(warnings[2].message, /без маркера @end/);
+});
+
+test('Fixtures: leech-and-pill-cards.md verifies leech tracking and cloze splitting', () => {
+  const filePath = getFixturePath('leech-and-pill-cards.md');
+  const content = fs.readFileSync(filePath, 'utf-8');
+
+  const { cards, warnings } = parseCardsFromMarkdown(
+    'Notes/pharma.md',
+    'pharma.md',
+    content,
+    ['Pharmacology']
+  );
+
+  assert.equal(warnings.length, 0);
+  assert.equal(cards.length, 3); // 1 regular + 2 cloze virtual cards
+
+  const regularCard = cards.find(c => !c.isCloze);
+  assert.ok(regularCard);
+  assert.ok(regularCard.tags.includes('leech-candidate'));
+  assert.match(regularCard.front, /fluoroquinolones/);
+
+  const clozeCards = cards.filter(c => c.isCloze);
+  assert.equal(clozeCards.length, 2);
+  assert.ok(clozeCards[0].tags.includes('c1'));
+  assert.ok(clozeCards[1].tags.includes('c2'));
+});
+

@@ -7,6 +7,7 @@
     "dev": "node esbuild.config.mjs",
     "dev:obsidian": "./scripts/dev-obsidian.sh",
     "link:vault": "./scripts/link-vault.sh",
+    "setup:vault": "./scripts/setup-dev-vault.sh",
     "verify": "tsc -noEmit -skipLibCheck && node esbuild.test.mjs && node esbuild.config.mjs production",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "test": "node esbuild.test.mjs"
