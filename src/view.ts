@@ -460,31 +460,7 @@ export class StudyView extends ItemView {
       this.resetSession();
     });
 
-    // 3. Shuffle Button
-    const shuffleBtn = leftGroup.createEl('button', {
-      cls: 'clickable-icon seelearn-btn-icon',
-      title:
-        this.sessionState === 'active'
-          ? 'Перемешать оставшиеся карточки в очереди'
-          : 'Перемешать колоду',
-    });
-    setIcon(shuffleBtn, 'shuffle');
-    shuffleBtn.addEventListener('click', () => {
-      this.shuffleQueue();
-    });
-
-    // 4. Refresh Button
-    const refreshBtn = leftGroup.createEl('button', {
-      cls: 'clickable-icon seelearn-btn-icon',
-      title: 'Переиндексировать хранилище',
-    });
-    setIcon(refreshBtn, 'refresh-cw');
-    refreshBtn.addEventListener('click', async () => {
-      new Notice('SeeLearn: переиндексация карточек...');
-      await this.plugin.reloadAllCards();
-    });
-
-    // 5. Scoped SRS Queue Filter Pills (reflects ONLY cards in selected scope!)
+    // 3. Scoped SRS Queue Filter Pills (reflects ONLY cards in selected scope!)
     if (isTest) {
       const scopedCards = this.plugin.cards.filter((c) => this.cardMatchesScope(c));
       const breakdown = this.plugin.storage.getSRSBreakdown(scopedCards);
@@ -1267,9 +1243,12 @@ topics:
     this.navBarEl.empty();
     this.navBarEl.style.display = 'flex';
 
-    // 1. Left group: persistent help button
+    // 1. Left group: persistent utility actions (Help, Shuffle, Refresh)
     const leftNav = this.navBarEl.createDiv({ cls: 'seelearn-nav-group left' });
-    const helpBtn = leftNav.createEl('button', {
+    const actionsGroup = leftNav.createDiv({ cls: 'seelearn-nav-actions' });
+
+    // Help button
+    const helpBtn = actionsGroup.createEl('button', {
       cls: 'clickable-icon seelearn-btn-icon seelearn-nav-help-btn',
       title: 'Шпаргалка и справка',
     });
@@ -1277,6 +1256,37 @@ topics:
     setTooltip(helpBtn, 'Шпаргалка и справка');
     helpBtn.addEventListener('click', async () => {
       await OnboardingManager.openCheatsheetNote(this.app);
+    });
+
+    // Shuffle button
+    const shuffleBtn = actionsGroup.createEl('button', {
+      cls: 'clickable-icon seelearn-btn-icon seelearn-nav-shuffle-btn',
+      title:
+        this.sessionState === 'active'
+          ? 'Перемешать оставшиеся карточки в очереди'
+          : 'Перемешать колоду',
+    });
+    setIcon(shuffleBtn, 'shuffle');
+    setTooltip(
+      shuffleBtn,
+      this.sessionState === 'active'
+        ? 'Перемешать оставшиеся карточки в очереди'
+        : 'Перемешать колоду'
+    );
+    shuffleBtn.addEventListener('click', () => {
+      this.shuffleQueue();
+    });
+
+    // Refresh / Reindex button
+    const refreshBtn = actionsGroup.createEl('button', {
+      cls: 'clickable-icon seelearn-btn-icon seelearn-nav-refresh-btn',
+      title: 'Переиндексировать хранилище',
+    });
+    setIcon(refreshBtn, 'refresh-cw');
+    setTooltip(refreshBtn, 'Переиндексировать хранилище');
+    refreshBtn.addEventListener('click', async () => {
+      new Notice('SeeLearn: переиндексация карточек...');
+      await this.plugin.reloadAllCards();
     });
 
     // 2. Center group: navigation and rating buttons (populated in active session)

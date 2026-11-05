@@ -794,6 +794,46 @@ button.seelearn-nav-help-btn:hover {
   justify-content: flex-end;
 }
 
+/* Persistent utility actions layout (Help, Shuffle, Refresh) */
+.seelearn-nav-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.seelearn-nav-actions .seelearn-btn-icon {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: var(--radius-s, 4px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  background-color: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.seelearn-nav-actions .seelearn-btn-icon:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+  border-color: var(--background-modifier-border);
+}
+
+.seelearn-nav-actions .seelearn-btn-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.seelearn-nav-actions .seelearn-nav-help-btn {
+  border-radius: 50% !important;
+  border-color: transparent !important;
+}
+
 .seelearn-nav-group.center {
   flex: 0 0 auto;
   justify-content: center;
