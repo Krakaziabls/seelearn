@@ -15,10 +15,18 @@
   font-family: var(--font-ui);
 }
 
+:root,
+.seelearn-study-container {
+  --seelearn-toggle-width: 170px;
+}
+
 /* --------------------------------------------------------------------------
    Top Toolbar
    -------------------------------------------------------------------------- */
 .seelearn-toolbar {
+  position: relative;
+  min-height: 48px;
+  box-sizing: border-box;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -40,7 +48,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 170px;
+  width: var(--seelearn-toggle-width, 170px);
   box-sizing: border-box;
   text-align: center;
   gap: 6px;
@@ -133,12 +141,18 @@ button.seelearn-nav-help-btn:hover {
 }
 
 .seelearn-counter-badge {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 2;
   font-size: 0.85em;
   font-weight: 500;
   color: var(--text-muted);
   background-color: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
-  padding: 3px 10px;
+  padding: 3px 12px;
   border-radius: 12px;
   white-space: nowrap;
 }
@@ -222,6 +236,8 @@ button.seelearn-nav-help-btn:hover {
   border-radius: var(--radius-s, 4px);
   padding: 3px 8px;
   gap: 6px;
+  width: var(--seelearn-toggle-width, 170px);
+  box-sizing: border-box;
   flex-shrink: 0;
 }
 
@@ -229,6 +245,7 @@ button.seelearn-nav-help-btn:hover {
   display: inline-flex;
   align-items: center;
   color: var(--text-faint);
+  flex-shrink: 0;
 }
 
 .seelearn-tag-search-icon svg {
@@ -244,7 +261,9 @@ button.seelearn-nav-help-btn:hover {
   padding: 0 2px !important;
   outline: none !important;
   box-shadow: none !important;
-  width: 110px;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
 }
 
 .seelearn-tag-search-clear {
@@ -436,9 +455,7 @@ button.seelearn-nav-help-btn:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
+  flex-shrink: 0;
 }
 
 .seelearn-progress-pill {
@@ -475,22 +492,35 @@ button.seelearn-nav-help-btn:hover {
   border: 1px solid var(--background-modifier-border);
 }
 
-.seelearn-card-tags {
+.seelearn-header-meta {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 12px;
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+}
+
+.seelearn-card-tags,
+.seelearn-file-link {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 50%;
   overflow-x: auto;
   white-space: nowrap;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  mask-image: linear-gradient(to right, black 85%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
 }
 
-.seelearn-card-tags::-webkit-scrollbar {
+.seelearn-card-tags::-webkit-scrollbar,
+.seelearn-file-link::-webkit-scrollbar {
   display: none;
+}
+
+.seelearn-card-tags {
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .seelearn-card-tag-pill {
@@ -517,6 +547,11 @@ button.seelearn-nav-help-btn:hover {
   gap: 5px;
   font-size: 0.8em;
   color: var(--text-muted);
+  cursor: pointer;
+}
+
+.seelearn-file-link:hover {
+  color: var(--text-accent);
 }
 
 .seelearn-icon-inline {
@@ -533,15 +568,17 @@ button.seelearn-nav-help-btn:hover {
 .seelearn-jump-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 0.8em;
-  padding: 2px 8px;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   border-radius: var(--radius-s, 4px);
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
   color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s ease;
+  flex-shrink: 0;
 }
 
 .seelearn-jump-btn:hover {
@@ -867,20 +904,30 @@ button.seelearn-nav-help-btn:hover {
 
 /* SRS Queue Filter Pills in Toolbar */
 .seelearn-srs-filter-group {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 5px;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .seelearn-srs-pill {
   font-size: 0.8em;
-  padding: 3px 8px;
-  border-radius: 12px;
+  font-weight: 500;
+  height: 26px;
+  box-sizing: border-box;
+  padding: 3px 9px;
+  border-radius: 13px;
   border: 1px solid var(--background-modifier-border);
   background-color: var(--background-primary);
   color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 .seelearn-srs-pill:hover {
@@ -892,15 +939,27 @@ button.seelearn-nav-help-btn:hover {
   background-color: var(--interactive-accent);
   color: var(--text-on-accent);
   border-color: var(--interactive-accent);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .seelearn-srs-pill.seelearn-pill-due {
   border-color: rgba(245, 158, 11, 0.4);
 }
 
+.seelearn-srs-pill.seelearn-pill-due.is-active {
+  border-color: var(--color-orange, #f59e0b);
+  background-color: var(--color-orange, #f59e0b);
+  color: #ffffff;
+}
+
 .seelearn-srs-pill.seelearn-pill-new {
   border-color: rgba(59, 130, 246, 0.4);
+}
+
+.seelearn-srs-pill.seelearn-pill-new.is-active {
+  border-color: var(--color-blue, #3b82f6);
+  background-color: var(--color-blue, #3b82f6);
+  color: #ffffff;
 }
 
 
@@ -989,8 +1048,32 @@ button.seelearn-nav-help-btn:hover {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  margin-top: 8px;
-  flex-wrap: wrap;
+  margin-top: 16px;
+  width: 100%;
+  max-width: 580px;
+}
+
+.seelearn-summary-actions button,
+.seelearn-summary-btn {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  height: 38px !important;
+  padding: 8px 16px !important;
+  border-radius: var(--radius-m) !important;
+  font-size: 0.9em;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
+  box-sizing: border-box;
+  margin: 0;
+  border: 1px solid var(--background-modifier-border);
+}
+
+.seelearn-summary-actions button.mod-cta {
+  border-color: transparent;
 }
 
 /* --------------------------------------------------------------------------
@@ -1023,20 +1106,7 @@ button.seelearn-nav-help-btn:hover {
   gap: 4px;
 }
 
-.seelearn-progress-pill.is-cloze {
-  background-color: rgba(147, 51, 234, 0.12);
-  color: var(--color-purple, #a855f7);
-  border: 1px solid rgba(147, 51, 234, 0.3);
-  padding: 2px 6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
 
-.seelearn-progress-pill.is-cloze svg {
-  width: 12px;
-  height: 12px;
-}
 
 /* --------------------------------------------------------------------------
    Cloze Deletion Text Elements
@@ -1062,125 +1132,7 @@ button.seelearn-nav-help-btn:hover {
   margin: 0 2px;
 }
 
-/* --------------------------------------------------------------------------
-   Quick Edit Button & Modal
-   -------------------------------------------------------------------------- */
-.seelearn-btn-edit {
-  color: var(--text-muted);
-}
 
-.seelearn-btn-edit:hover {
-  color: var(--interactive-accent);
-  border-color: var(--interactive-accent);
-}
-
-/* Wide Quick Edit Modal */
-.modal-container:has(.seelearn-modal-wide) .modal,
-.modal.seelearn-modal-wide,
-.seelearn-modal-wide {
-  width: min(880px, 92vw) !important;
-  max-width: 880px !important;
-}
-
-.seelearn-modal-header {
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--background-modifier-border);
-}
-
-.seelearn-modal-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.seelearn-modal-title-row h2 {
-  margin: 0;
-  font-size: 1.3em;
-}
-
-.seelearn-modal-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 0.85em;
-  color: var(--text-muted);
-  flex-wrap: wrap;
-}
-
-.seelearn-meta-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.seelearn-modal-tags {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.seelearn-edit-grid {
-  display: grid;
-  gap: 16px;
-  width: 100%;
-  margin-bottom: 16px;
-}
-
-.seelearn-edit-grid.two-col {
-  grid-template-columns: 1fr 1fr;
-}
-
-.seelearn-edit-grid.single-col {
-  grid-template-columns: 1fr;
-}
-
-@media (max-width: 640px) {
-  .seelearn-edit-grid.two-col {
-    grid-template-columns: 1fr;
-  }
-}
-
-.seelearn-edit-col {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.seelearn-edit-label {
-  font-size: 0.85em;
-  font-weight: 600;
-  color: var(--text-normal);
-}
-
-.seelearn-edit-textarea {
-  width: 100%;
-  height: 260px;
-  resize: none;
-  background-color: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m, 6px);
-  padding: 12px;
-  font-family: var(--font-monospace);
-  font-size: 0.9em;
-  line-height: 1.5;
-  box-sizing: border-box;
-  color: var(--text-normal);
-}
-
-.seelearn-edit-textarea:focus {
-  border-color: var(--interactive-accent);
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
-}
-
-.seelearn-modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 12px;
-}
 
 /* --------------------------------------------------------------------------
    Streak Banner & Activity Heatmap
@@ -1479,8 +1431,15 @@ button.seelearn-nav-help-btn:hover {
    Methodology Modal & Save Test Modal
    -------------------------------------------------------------------------- */
 
+.modal.seelearn-save-test-modal,
+.modal-container:has(.seelearn-save-test-modal) .modal {
+  width: min(640px, 90vw) !important;
+  max-width: 640px !important;
+  margin: auto !important;
+}
+
 .seelearn-save-test-modal {
-  max-width: 480px;
+  width: 100%;
 }
 
 .seelearn-preset-info-box {
@@ -1495,6 +1454,14 @@ button.seelearn-nav-help-btn:hover {
 
 .seelearn-preset-info-box p {
   margin: 2px 0;
+}
+
+.seelearn-modal-btn-row {
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  gap: 14px !important;
+  margin-top: 20px !important;
 }
 
 

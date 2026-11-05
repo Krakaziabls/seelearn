@@ -30,6 +30,7 @@ interface HistoryEntry {
 export class StudyView extends ItemView {
   plugin: SeeLearnPlugin;
   private selectedTags: Set<string> = new Set();
+  private selectedTagsOrder: string[] = [];
   private selectedScope: string = ''; // '' for all, 'folder:...' or 'file:...'
   private srsFilter: SRSQueueFilter = 'all';
   private tagSearchQuery: string = '';
@@ -425,7 +426,7 @@ export class StudyView extends ItemView {
 
     const defaultOption = scopeSelect.createEl('option', {
       value: '',
-      text: `Все заметки (${this.plugin.cards.length} карт)`,
+      text: `Все заметки (${this.plugin.cards.length})`,
     });
     if (!this.selectedScope) defaultOption.selected = true;
 
@@ -487,7 +488,7 @@ export class StudyView extends ItemView {
     if (isTest) {
       const scopedCards = this.plugin.cards.filter((c) => this.cardMatchesScope(c));
       const breakdown = this.plugin.storage.getSRSBreakdown(scopedCards);
-      const srsGroup = this.toolbarEl.createDiv({ cls: 'seelearn-srs-filter-group' });
+      const srsGroup = rightGroup.createDiv({ cls: 'seelearn-srs-filter-group' });
 
       const allPill = srsGroup.createEl('button', {
         cls: `seelearn-srs-pill ${this.srsFilter === 'all' ? 'is-active' : ''}`,
@@ -536,7 +537,7 @@ export class StudyView extends ItemView {
       });
     }
 
-    // 7. Session Actions & Card Counter
+    // 7. Session Actions & Card Counter (strictly centered in toolbar via absolute positioning)
     if (this.sessionState === 'active') {
       const finishBtn = rightGroup.createEl('button', {
         cls: 'clickable-icon seelearn-btn-icon',
@@ -550,13 +551,13 @@ export class StudyView extends ItemView {
 
       const total = this.sessionQueue.length;
       const current = total > 0 ? this.currentIndex + 1 : 0;
-      rightGroup.createDiv({
+      this.toolbarEl.createDiv({
         cls: 'seelearn-counter-badge',
         text: `Карта ${current} из ${total}`,
       });
     } else if (this.sessionState === 'lobby') {
       const matchingCount = this.getFilteredCards().length;
-      rightGroup.createDiv({
+      this.toolbarEl.createDiv({
         cls: 'seelearn-counter-badge',
         text: `В очереди: ${matchingCount}`,
       });
@@ -618,6 +619,7 @@ export class StudyView extends ItemView {
     });
     allChip.addEventListener('click', () => {
       this.selectedTags.clear();
+      this.selectedTagsOrder = [];
       this.sessionState = 'lobby';
       this.resetSession();
     });
@@ -626,26 +628,53 @@ export class StudyView extends ItemView {
       ? tags.filter((t) => t.tag.toLowerCase().includes(this.tagSearchQuery.toLowerCase()))
       : tags;
 
-    for (const { tag, count } of filteredTags) {
-      const isActive = this.selectedTags.has(tag);
+    const tagsMap = new Map(tags.map((t) => [t.tag, t.count]));
+
+    // 1. Selected (active) tags in MRU order (freshest selected tag is leftmost, right after "Все темы")
+    const activeTagsToRender = this.selectedTagsOrder.filter((tag) => {
+      if (!this.selectedTags.has(tag)) return false;
+      if (this.tagSearchQuery && !tag.toLowerCase().includes(this.tagSearchQuery.toLowerCase())) {
+        return false;
+      }
+      return true;
+    });
+
+    for (const tag of activeTagsToRender) {
+      const count = tagsMap.get(tag) || 0;
       const chip = container.createEl('button', {
-        cls: `seelearn-tag-chip ${isActive ? 'is-active' : ''}`,
+        cls: 'seelearn-tag-chip is-active',
       });
       chip.createSpan({ text: `#${tag}` });
       chip.createSpan({ cls: 'seelearn-tag-count', text: `${count}` });
 
       chip.addEventListener('click', () => {
-        if (this.selectedTags.has(tag)) {
-          this.selectedTags.delete(tag);
-        } else {
-          this.selectedTags.add(tag);
-        }
+        this.selectedTags.delete(tag);
+        this.selectedTagsOrder = this.selectedTagsOrder.filter((t) => t !== tag);
         this.sessionState = 'lobby';
         this.resetSession();
       });
     }
 
-    if (filteredTags.length === 0 && this.tagSearchQuery) {
+    // 2. Unselected tags in standard order
+    for (const { tag, count } of filteredTags) {
+      if (this.selectedTags.has(tag)) continue;
+
+      const chip = container.createEl('button', {
+        cls: 'seelearn-tag-chip',
+      });
+      chip.createSpan({ text: `#${tag}` });
+      chip.createSpan({ cls: 'seelearn-tag-count', text: `${count}` });
+
+      chip.addEventListener('click', () => {
+        this.selectedTags.add(tag);
+        this.selectedTagsOrder = [tag, ...this.selectedTagsOrder.filter((t) => t !== tag)];
+        this.sessionState = 'lobby';
+        this.resetSession();
+      });
+    }
+
+    const totalRendered = activeTagsToRender.length + filteredTags.filter((t) => !this.selectedTags.has(t.tag)).length;
+    if (totalRendered === 0 && this.tagSearchQuery) {
       container.createSpan({
         cls: 'seelearn-tags-empty-hint',
         text: 'Тема не найдена',
@@ -754,53 +783,38 @@ export class StudyView extends ItemView {
       progressPill.addClass('is-learn');
     }
 
-    // Cloze Deletion badge (icon only, minimalist)
-    if (card.isCloze) {
-      const clozePill = headerLeft.createSpan({ cls: 'seelearn-progress-pill is-cloze' });
-      setIcon(clozePill.createSpan({ cls: 'seelearn-icon-inline' }), 'scissors');
-      clozePill.setAttribute(
-        'title',
-        `Карточка с заполнением пропусков (Cloze Deletion${card.clozeIndex ? `, c${card.clozeIndex}` : ''})`
-      );
-    }
+    // Header Meta Block: Balanced Tags and File Link (50% each)
+    const headerMeta = cardHeader.createDiv({ cls: 'seelearn-header-meta' });
 
     // Tags list container with overflow scroll
+    const tagsContainer = headerMeta.createDiv({ cls: 'seelearn-card-tags' });
     if (card.tags.length > 0) {
-      const tagsContainer = headerLeft.createDiv({ cls: 'seelearn-card-tags' });
       for (const tag of card.tags) {
         tagsContainer.createSpan({ cls: 'seelearn-card-tag-pill', text: `#${tag}` });
       }
     }
 
-    const headerRight = cardHeader.createDiv({ cls: 'seelearn-header-right' });
-
-    // Quick Edit Button
-    const editBtn = headerRight.createEl('button', {
-      cls: 'seelearn-jump-btn seelearn-btn-edit',
-      title: 'Быстрое редактирование карточки без перехода в заметку',
-    });
-    setIcon(editBtn.createSpan({ cls: 'seelearn-icon-inline' }), 'file-edit');
-    editBtn.createSpan({ text: 'Изменить' });
-    editBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      new QuickEditCardModal(this.app, card, async () => {
-        await this.plugin.reloadAllCards();
-      }).open();
-    });
-
-    const fileLabel = headerRight.createDiv({
+    // File Link container with overflow scroll
+    const fileLabel = headerMeta.createDiv({
       cls: 'seelearn-file-link',
       title: `Файл: ${card.filePath}, строка ${card.lineStart}`,
     });
     setIcon(fileLabel.createSpan({ cls: 'seelearn-icon-inline' }), 'file-text');
     fileLabel.createSpan({ text: `${card.fileName}:${card.lineStart}` });
+    fileLabel.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.openCardInNote(card);
+    });
 
+    const headerRight = cardHeader.createDiv({ cls: 'seelearn-header-right' });
+
+    // Jump to Note Button (strictly icon-only)
     const jumpBtn = headerRight.createEl('button', {
       cls: 'seelearn-jump-btn',
       title: 'Открыть заметку на этой карточке',
     });
+    jumpBtn.setAttribute('aria-label', 'Открыть заметку на этой карточке');
     setIcon(jumpBtn.createSpan({ cls: 'seelearn-icon-inline' }), 'external-link');
-    jumpBtn.createSpan({ text: 'В заметку' });
     jumpBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.openCardInNote(card);
@@ -947,6 +961,7 @@ export class StudyView extends ItemView {
       resetBtn.addEventListener('click', () => {
         this.selectedScope = '';
         this.selectedTags.clear();
+        this.selectedTagsOrder = [];
         this.srsFilter = 'all';
         this.resetSession();
       });
@@ -1179,7 +1194,7 @@ export class StudyView extends ItemView {
     const actionsRow = emptyBox.createDiv({ cls: 'seelearn-summary-actions' });
 
     const lobbyBtn = actionsRow.createEl('button', {
-      cls: 'seelearn-nav-btn',
+      cls: 'seelearn-nav-btn seelearn-summary-btn',
       text: 'Вернуться в лобби',
     });
     lobbyBtn.addEventListener('click', () => {
@@ -1189,7 +1204,7 @@ export class StudyView extends ItemView {
 
     if (this.sessionStats.failedCards.length > 0) {
       const repeatFailedBtn = actionsRow.createEl('button', {
-        cls: 'seelearn-nav-btn seelearn-btn-repeat',
+        cls: 'seelearn-nav-btn seelearn-btn-repeat seelearn-summary-btn',
         text: `Повторить ошибки (${this.sessionStats.failedCards.length})`,
       });
       repeatFailedBtn.addEventListener('click', () => {
@@ -1203,7 +1218,7 @@ export class StudyView extends ItemView {
     }
 
     const restartBtn = actionsRow.createEl('button', {
-      cls: 'mod-cta',
+      cls: 'seelearn-nav-btn mod-cta seelearn-summary-btn',
       text: 'Повторить всю сессию',
     });
     restartBtn.addEventListener('click', () => {
@@ -1580,6 +1595,7 @@ topics:
   public startTestPreset(preset: TestPreset): void {
     this.selectedScope = preset.scope;
     this.selectedTags = new Set(preset.tags);
+    this.selectedTagsOrder = [...preset.tags];
     this.srsFilter = 'all';
     this.plugin.settings.studyMode = 'test';
     this.activePresetName = preset.name;
@@ -1820,161 +1836,7 @@ class WarningsModal extends Modal {
   }
 }
 
-/**
- * Modal for editing flashcard content directly in place with horizontal side-by-side layout.
- */
-class QuickEditCardModal extends Modal {
-  private card: Flashcard;
-  private onSaveCallback: () => Promise<void>;
 
-  constructor(app: App, card: Flashcard, onSaveCallback: () => Promise<void>) {
-    super(app);
-    this.card = card;
-    this.onSaveCallback = onSaveCallback;
-  }
-
-  onOpen(): void {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass('seelearn-modal-wide');
-
-    // Header with Title and Metadata
-    const headerEl = contentEl.createDiv({ cls: 'seelearn-modal-header' });
-    const titleRow = headerEl.createDiv({ cls: 'seelearn-modal-title-row' });
-    const titleIcon = titleRow.createSpan({ cls: 'seelearn-icon-inline' });
-    setIcon(titleIcon, 'file-edit');
-    titleRow.createEl('h2', { text: 'Редактирование карточки' });
-
-    // Metadata bar: file, lines, tags
-    const metaBar = headerEl.createDiv({ cls: 'seelearn-modal-meta' });
-    const fileMeta = metaBar.createSpan({ cls: 'seelearn-meta-item' });
-    setIcon(fileMeta.createSpan({ cls: 'seelearn-icon-inline' }), 'file-text');
-    fileMeta.createSpan({
-      text: `${this.card.filePath} (строки ${this.card.lineStart}-${this.card.lineEnd})`,
-    });
-
-    if (this.card.tags.length > 0) {
-      const tagsMeta = metaBar.createDiv({ cls: 'seelearn-modal-tags' });
-      for (const t of this.card.tags) {
-        tagsMeta.createSpan({ cls: 'seelearn-card-tag-pill', text: `#${t}` });
-      }
-    }
-
-    // Grid layout: Side-by-side if hasBack, single column if front-only
-    const gridEl = contentEl.createDiv({
-      cls: `seelearn-edit-grid ${this.card.hasBack ? 'two-col' : 'single-col'}`,
-    });
-
-    // Column 1: Front
-    const frontCol = gridEl.createDiv({ cls: 'seelearn-edit-col' });
-    frontCol.createEl('label', {
-      cls: 'seelearn-edit-label',
-      text: 'Лицевая сторона (@front):',
-    });
-    const frontArea = frontCol.createEl('textarea', {
-      cls: 'seelearn-edit-textarea',
-      value: this.card.front,
-    });
-
-    // Column 2: Back (if card has back)
-    let backArea: HTMLTextAreaElement | null = null;
-    if (this.card.hasBack) {
-      const backCol = gridEl.createDiv({ cls: 'seelearn-edit-col' });
-      backCol.createEl('label', {
-        cls: 'seelearn-edit-label',
-        text: 'Оборотная сторона (@back):',
-      });
-      backArea = backCol.createEl('textarea', {
-        cls: 'seelearn-edit-textarea',
-        value: this.card.back,
-      });
-    }
-
-    // Actions Row
-    const btnRow = contentEl.createDiv({ cls: 'seelearn-modal-actions' });
-    const cancelBtn = btnRow.createEl('button', { text: 'Отмена' });
-    cancelBtn.addEventListener('click', () => this.close());
-
-    const doSave = async () => {
-      const file = this.app.vault.getAbstractFileByPath(this.card.filePath);
-      if (!(file instanceof TFile)) {
-        new Notice('Файл карточки не найден на диске');
-        return;
-      }
-
-      const newFront = frontArea.value.trim();
-      const newBack = backArea ? backArea.value.trim() : '';
-
-      try {
-        const fileContent = await this.app.vault.read(file);
-        const lines = fileContent.split(/\r?\n/);
-        const startIdx = this.card.lineStart - 1;
-        const endIdx = this.card.lineEnd - 1;
-
-        if (startIdx < 0 || endIdx >= lines.length) {
-          new Notice('Не удалось определить границы карточки в файле');
-          return;
-        }
-
-        const originalHeader = lines[startIdx];
-        const isCommentSyntax = originalHeader.includes('%%');
-        const tagPart = this.card.localTags.length > 0 ? ` #${this.card.localTags.join(' #')}` : '';
-
-        let replacement = '';
-        if (isCommentSyntax) {
-          replacement = `%% @card${tagPart} %%\n%% @front %%\n${newFront}\n`;
-          if (this.card.hasBack && newBack) {
-            replacement += `%% @back %%\n${newBack}\n`;
-          }
-          replacement += `%% @end %%`;
-        } else {
-          replacement = `@card${tagPart}\n@front\n${newFront}\n`;
-          if (this.card.hasBack && newBack) {
-            replacement += `@back\n${newBack}\n`;
-          }
-          replacement += `@end`;
-        }
-
-        const updatedLines = [
-          ...lines.slice(0, startIdx),
-          replacement,
-          ...lines.slice(endIdx + 1),
-        ];
-
-        await this.app.vault.modify(file, updatedLines.join('\n'));
-        new Notice('Карточка успешно обновлена');
-        this.close();
-        await this.onSaveCallback();
-      } catch (err) {
-        new Notice(`Ошибка сохранения: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    };
-
-    const saveBtn = btnRow.createEl('button', {
-      cls: 'mod-cta',
-      text: 'Сохранить (Ctrl+Enter)',
-    });
-    saveBtn.addEventListener('click', doSave);
-
-    // Hotkey: Ctrl+Enter / Cmd+Enter inside textareas saves immediately
-    const onKeydown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        doSave();
-      }
-    };
-    frontArea.addEventListener('keydown', onKeydown);
-    if (backArea) {
-      backArea.addEventListener('keydown', onKeydown);
-    }
-
-    setTimeout(() => frontArea.focus(), 50);
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
-}
 
 
 
@@ -2002,6 +1864,7 @@ export class SaveTestModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
+    this.modalEl.addClass('seelearn-save-test-modal');
     contentEl.addClass('seelearn-save-test-modal');
 
     contentEl.createEl('h2', { text: 'Сохранить набор карточек в Тест' });
