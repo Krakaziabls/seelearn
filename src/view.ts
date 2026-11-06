@@ -14,6 +14,7 @@ import {
 import type SeeLearnPlugin from './main';
 import { CardProgressRecord, Flashcard, SRSQueueFilter, TestPreset, ValidationWarning } from './types';
 import { fisherYatesShuffle, interleaveCards } from './shuffle';
+import { prepareSessionPool } from './session';
 import { getSRSIntervalPreviews, isCardDue, isCardLeech, isCardNew, SRSRating } from './srs';
 import { OnboardingManager } from './onboarding';
 
@@ -189,10 +190,13 @@ export class StudyView extends ItemView {
       return;
     }
 
-    if (this.plugin.settings.shuffleOnStart) {
-      filtered = this.plugin.settings.interleaveTopics
-        ? interleaveCards(filtered)
-        : fisherYatesShuffle(filtered);
+    filtered = prepareSessionPool(filtered, {
+      limit: this.plugin.settings.sessionCardLimit ?? 'all',
+      shuffle: !this.plugin.settings.linearSessionOrder,
+    });
+
+    if (this.plugin.settings.interleaveTopics && !this.plugin.settings.linearSessionOrder) {
+      filtered = interleaveCards(filtered);
     }
 
     this.sessionQueue = [...filtered];
@@ -218,10 +222,13 @@ export class StudyView extends ItemView {
     let filtered = this.getFilteredCards();
 
     if (this.sessionState === 'active') {
-      if (this.plugin.settings.shuffleOnStart) {
-        filtered = this.plugin.settings.interleaveTopics
-          ? interleaveCards(filtered)
-          : fisherYatesShuffle(filtered);
+      filtered = prepareSessionPool(filtered, {
+        limit: this.plugin.settings.sessionCardLimit ?? 'all',
+        shuffle: !this.plugin.settings.linearSessionOrder,
+      });
+
+      if (this.plugin.settings.interleaveTopics && !this.plugin.settings.linearSessionOrder) {
+        filtered = interleaveCards(filtered);
       }
 
       this.sessionQueue = [...filtered];
@@ -300,38 +307,17 @@ export class StudyView extends ItemView {
         }
       }
 
-      // Test / SRS Queue filter
-      if (this.isTestMode()) {
-        const record = this.plugin.storage.getProgress(card.id);
-        if (this.srsFilter === 'due' && !isCardDue(record, todayStr)) {
-          return false;
-        }
-        if (this.srsFilter === 'new' && !isCardNew(record)) {
-          return false;
-        }
+      // SRS Queue filter (applies to both Learn and Test modes)
+      const record = this.plugin.storage.getProgress(card.id);
+      if (this.srsFilter === 'due' && !isCardDue(record, todayStr)) {
+        return false;
+      }
+      if (this.srsFilter === 'new' && !isCardNew(record)) {
+        return false;
       }
 
       return true;
     });
-
-    if (this.isTestMode() && this.srsFilter === 'all') {
-      const dueCards = matching.filter((c) =>
-        isCardDue(this.plugin.storage.getProgress(c.id), todayStr)
-      );
-      const newCards = matching.filter((c) =>
-        isCardNew(this.plugin.storage.getProgress(c.id))
-      );
-      const otherCards = matching.filter(
-        (c) =>
-          !isCardDue(this.plugin.storage.getProgress(c.id), todayStr) &&
-          !isCardNew(this.plugin.storage.getProgress(c.id))
-      );
-
-      const maxDue = this.plugin.settings.maxDuePerSession || 50;
-      const maxNew = this.plugin.settings.maxNewPerSession || 25;
-
-      return [...dueCards.slice(0, maxDue), ...newCards.slice(0, maxNew), ...otherCards];
-    }
 
     return matching;
   }
@@ -487,7 +473,7 @@ export class StudyView extends ItemView {
     }
 
     // 4. Scoped SRS Queue Filter Pills (reflects ONLY cards in selected scope! Visible only in lobby)
-    if (isTest && this.sessionState === 'lobby') {
+    if (this.sessionState === 'lobby') {
       const scopedCards = this.plugin.cards.filter((c) => this.cardMatchesScope(c));
       const breakdown = this.plugin.storage.getSRSBreakdown(scopedCards);
       const srsGroup = rightGroup.createDiv({ cls: 'seelearn-srs-filter-group' });
@@ -541,16 +527,6 @@ export class StudyView extends ItemView {
 
     // 7. Session Actions & Card Counter (strictly centered in toolbar via absolute positioning)
     if (this.sessionState === 'active') {
-      const finishBtn = rightGroup.createEl('button', {
-        cls: 'clickable-icon seelearn-btn-icon',
-        title: 'Завершить текущую сессию и перейти к итогам',
-      });
-      setIcon(finishBtn, 'log-out');
-      finishBtn.addEventListener('click', () => {
-        this.sessionState = 'finished';
-        this.renderAll();
-      });
-
       const total = this.sessionQueue.length;
       const current = total > 0 ? this.currentIndex + 1 : 0;
       this.toolbarEl.createDiv({
@@ -993,15 +969,13 @@ export class StudyView extends ItemView {
     // Grid with statistics
     const statsGrid = lobbyBox.createDiv({ cls: 'seelearn-lobby-grid' });
 
-    if (this.isTestMode()) {
-      const dueCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
-      dueCard.createDiv({ cls: 'seelearn-stat-val text-warning', text: `${dueCards.length}` });
-      dueCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'К повторению' });
+    const dueCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
+    dueCard.createDiv({ cls: 'seelearn-stat-val text-warning', text: `${dueCards.length}` });
+    dueCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'К повторению' });
 
-      const newCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
-      newCard.createDiv({ cls: 'seelearn-stat-val text-accent', text: `${newCards.length}` });
-      newCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'Новые' });
-    }
+    const newCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
+    newCard.createDiv({ cls: 'seelearn-stat-val text-accent', text: `${newCards.length}` });
+    newCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'Новые' });
 
     const totalCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
     totalCard.createDiv({ cls: 'seelearn-stat-val', text: `${matchingCards.length}` });
@@ -1023,6 +997,38 @@ export class StudyView extends ItemView {
     setIcon(pill2.createSpan({ cls: 'seelearn-icon-inline' }), 'trophy');
     pill2.createSpan({ text: ` Рекорд: ${streakStats.bestStreak} дн.` });
 
+    // Limit selector row: [ 10 | 20 | 50 | 100 | Все ]
+    const limitRow = lobbyBox.createDiv({ cls: 'seelearn-limit-row' });
+    limitRow.createSpan({ cls: 'seelearn-limit-lbl', text: 'Лимит карточек на сессию:' });
+    const limitPills = limitRow.createDiv({ cls: 'seelearn-limit-pills' });
+
+    const limitOptions: Array<{ label: string; value: 'all' | number }> = [
+      { label: '10', value: 10 },
+      { label: '20', value: 20 },
+      { label: '50', value: 50 },
+      { label: '100', value: 100 },
+      { label: 'Все', value: 'all' },
+    ];
+
+    const currentLimit = this.plugin.settings.sessionCardLimit ?? 'all';
+
+    for (const opt of limitOptions) {
+      const isSelected = currentLimit === opt.value;
+      const pill = limitPills.createEl('button', {
+        cls: `seelearn-limit-pill ${isSelected ? 'is-active' : ''}`,
+        text: opt.label,
+        title:
+          opt.value === 'all'
+            ? 'Пройти все доступные карточки'
+            : `Ограничить сессию ${opt.value} карточками`,
+      });
+      pill.addEventListener('click', async () => {
+        this.plugin.settings.sessionCardLimit = opt.value;
+        await this.plugin.saveSettings();
+        this.renderAll();
+      });
+    }
+
     // Primary action button & test saving
     const actionsRow = lobbyBox.createDiv({ cls: 'seelearn-lobby-actions' });
     const startBtn = actionsRow.createEl('button', {
@@ -1037,7 +1043,7 @@ export class StudyView extends ItemView {
       this.startSession();
     });
 
-    if (this.isTestMode()) {
+    if (this.isTestMode() && this.srsFilter === 'all') {
       const saveTestBtn = actionsRow.createEl('button', {
         cls: 'seelearn-nav-btn seelearn-btn-save-test',
         text: 'Сохранить как тест...',
@@ -1064,9 +1070,9 @@ export class StudyView extends ItemView {
       text: 'Нажмите Пробел или Enter для быстрого старта',
     });
 
-    // Saved test presets list (for rapid testing)
+    // Saved test presets list (for rapid testing, shown only when srsFilter === 'all')
     const presets = this.plugin.storage.getTestPresets();
-    if (presets.length > 0 && this.isTestMode()) {
+    if (presets.length > 0 && this.isTestMode() && this.srsFilter === 'all') {
       const presetsSection = lobbyBox.createDiv({ cls: 'seelearn-presets-section' });
       const presetsHeader = presetsSection.createDiv({ cls: 'seelearn-presets-header' });
       setIcon(presetsHeader.createSpan({ cls: 'seelearn-icon-inline' }), 'list-checks');
@@ -1338,8 +1344,21 @@ topics:
     // 2. Center group: navigation and rating buttons (populated in active session)
     const centerNav = this.navBarEl.createDiv({ cls: 'seelearn-nav-group center' });
 
-    // 3. Right group: symmetrical spacer to guarantee true center alignment
-    this.navBarEl.createDiv({ cls: 'seelearn-nav-group right' });
+    // 3. Right group: exit button in Learn mode, symmetrical spacer in Test mode
+    const rightNav = this.navBarEl.createDiv({ cls: 'seelearn-nav-group right' });
+
+    if (this.sessionState === 'active' && !this.isTestMode()) {
+      const exitBtn = rightNav.createEl('button', {
+        cls: 'clickable-icon seelearn-btn-icon seelearn-nav-exit-btn',
+        title: 'Завершить сессию и перейти к итогам',
+      });
+      setIcon(exitBtn, 'log-out');
+      setTooltip(exitBtn, 'Завершить сессию и перейти к итогам');
+      exitBtn.addEventListener('click', () => {
+        this.sessionState = 'finished';
+        this.renderAll();
+      });
+    }
 
     if (this.sessionState !== 'active' || this.sessionQueue.length === 0) {
       return;

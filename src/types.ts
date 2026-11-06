@@ -56,6 +56,8 @@ export interface SeeLearnSettings {
   requeueStep: number;
   maxNewPerSession: number;
   maxDuePerSession: number;
+  sessionCardLimit: 'all' | number;
+  linearSessionOrder: boolean;
   onboardingCompleted: boolean;
 }
 
@@ -76,6 +78,8 @@ export const DEFAULT_SETTINGS: SeeLearnSettings = {
   requeueStep: 3,
   maxNewPerSession: 25,
   maxDuePerSession: 50,
+  sessionCardLimit: 'all',
+  linearSessionOrder: false,
   onboardingCompleted: false,
 };
 
