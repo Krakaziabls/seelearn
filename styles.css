@@ -305,6 +305,58 @@ button.seelearn-nav-help-btn:hover {
   padding: 2px 8px;
 }
 
+/* Toggle button for tags bar in toolbar */
+.seelearn-tags-toggle-btn {
+  position: relative;
+}
+
+.seelearn-tags-toggle-btn.is-active {
+  color: var(--interactive-accent);
+  background-color: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.seelearn-tags-active-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--interactive-accent);
+}
+
+/* Collapse button inside tags bar */
+.seelearn-tags-collapse-btn {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: var(--radius-s, 4px);
+  color: var(--text-faint);
+  background: transparent;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: 4px;
+}
+
+.seelearn-tags-collapse-btn:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+  border-color: var(--background-modifier-border);
+}
+
+.seelearn-tags-collapse-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
 /* --------------------------------------------------------------------------
    Card Study Area
    -------------------------------------------------------------------------- */
