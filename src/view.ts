@@ -987,14 +987,6 @@ export class StudyView extends ItemView {
    */
   private renderLobbyState(): void {
     const matchingCards = this.getFilteredCards();
-    const todayStr = new Date().toISOString().split('T')[0];
-
-    const dueCards = matchingCards.filter((c) =>
-      isCardDue(this.plugin.storage.getProgress(c.id), todayStr)
-    );
-    const newCards = matchingCards.filter((c) =>
-      isCardNew(this.plugin.storage.getProgress(c.id))
-    );
 
     const lobbyBox = this.cardAreaEl.createDiv({ cls: 'seelearn-lobby-box' });
 
@@ -1037,20 +1029,22 @@ export class StudyView extends ItemView {
       return;
     }
 
-    // Grid with statistics
+    // Grid with statistics (context-sensitive 2 cards: specific queue count + estimated time)
     const statsGrid = lobbyBox.createDiv({ cls: 'seelearn-lobby-grid' });
 
-    const dueCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
-    dueCard.createDiv({ cls: 'seelearn-stat-val text-warning', text: `${dueCards.length}` });
-    dueCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'К повторению' });
-
-    const newCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
-    newCard.createDiv({ cls: 'seelearn-stat-val text-accent', text: `${newCards.length}` });
-    newCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'Новые' });
-
-    const totalCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
-    totalCard.createDiv({ cls: 'seelearn-stat-val', text: `${matchingCards.length}` });
-    totalCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'Пул карт' });
+    if (this.srsFilter === 'due') {
+      const dueCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
+      dueCard.createDiv({ cls: 'seelearn-stat-val text-warning', text: `${matchingCards.length}` });
+      dueCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'К повторению' });
+    } else if (this.srsFilter === 'new') {
+      const newCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
+      newCard.createDiv({ cls: 'seelearn-stat-val text-new', text: `${matchingCards.length}` });
+      newCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'Новые' });
+    } else {
+      const totalCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
+      totalCard.createDiv({ cls: 'seelearn-stat-val', text: `${matchingCards.length}` });
+      totalCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'Пул карт' });
+    }
 
     const currentLimit = this.plugin.settings.sessionCardLimit ?? 'all';
     const sessionCount =

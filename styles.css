@@ -1449,6 +1449,11 @@ button.seelearn-nav-help-btn:hover {
   color: var(--interactive-accent, #6366f1) !important;
 }
 
+.text-new,
+.text-blue {
+  color: var(--color-blue, #3b82f6) !important;
+}
+
 /* --------------------------------------------------------------------------
    Saved Test Presets & Methodology Link
    -------------------------------------------------------------------------- */
