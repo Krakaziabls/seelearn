@@ -549,7 +549,8 @@ export class StudyView extends ItemView {
         title: 'Лимит карточек на сессию. Нажмите, чтобы изменить',
       });
       badge.createSpan({ text: badgeText });
-      badge.createSpan({ cls: 'seelearn-badge-chevron', text: ' ▾' });
+      const chevronEl = badge.createSpan({ cls: 'seelearn-badge-chevron seelearn-icon-inline' });
+      setIcon(chevronEl, 'chevron-down');
 
       badge.addEventListener('click', (e: MouseEvent) => {
         e.stopPropagation();

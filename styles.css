@@ -176,14 +176,25 @@ button.seelearn-nav-help-btn:hover {
 }
 
 .seelearn-counter-badge .seelearn-badge-chevron {
-  font-size: 0.78em;
-  opacity: 0.65;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.85;
+  color: var(--text-muted);
   transition: all 0.15s ease;
+  margin-left: 2px;
+}
+
+.seelearn-counter-badge .seelearn-badge-chevron svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.5px;
 }
 
 .seelearn-counter-badge.is-interactive:hover .seelearn-badge-chevron {
   opacity: 1;
   color: var(--interactive-accent);
+  transform: translateY(1px);
 }
 
 .seelearn-badge-warning {
