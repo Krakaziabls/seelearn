@@ -10,6 +10,7 @@ import {
   Modal,
   App,
   Setting,
+  Menu,
 } from 'obsidian';
 import type SeeLearnPlugin from './main';
 import { CardProgressRecord, Flashcard, SRSQueueFilter, TestPreset, ValidationWarning } from './types';
@@ -447,45 +448,7 @@ export class StudyView extends ItemView {
       this.resetSession();
     });
 
-    // 3. Card Limit Dropdown (Session Limit: All / 10 / 20 / 50 / 100, visible in lobby)
-    if (this.sessionState === 'lobby') {
-      const limitSelect = leftGroup.createEl('select', {
-        cls: 'dropdown seelearn-limit-select',
-        title: 'Лимит карточек на сессию',
-      });
-
-      const limitOptions: Array<{ label: string; value: 'all' | number }> = [
-        { label: 'Лимит: Все', value: 'all' },
-        { label: 'Лимит: 10 карт', value: 10 },
-        { label: 'Лимит: 20 карт', value: 20 },
-        { label: 'Лимит: 50 карт', value: 50 },
-        { label: 'Лимит: 100 карт', value: 100 },
-      ];
-
-      const currentLimit = this.plugin.settings.sessionCardLimit ?? 'all';
-      if (typeof currentLimit === 'number' && !limitOptions.some((o) => o.value === currentLimit)) {
-        limitOptions.push({ label: `Лимит: ${currentLimit} карт`, value: currentLimit });
-      }
-
-      for (const opt of limitOptions) {
-        const optionEl = limitSelect.createEl('option', {
-          value: String(opt.value),
-          text: opt.label,
-        });
-        if (currentLimit === opt.value) {
-          optionEl.selected = true;
-        }
-      }
-
-      limitSelect.addEventListener('change', async () => {
-        const val = limitSelect.value === 'all' ? 'all' : parseInt(limitSelect.value, 10);
-        this.plugin.settings.sessionCardLimit = val;
-        await this.plugin.saveSettings();
-        this.renderAll();
-      });
-    }
-
-    // 4. Tags Bar Toggle Button (visible only in lobby when tags are available)
+    // 3. Tags Bar Toggle Button (visible only in lobby when tags are available)
     if (this.sessionState === 'lobby') {
       const availableTags = this.getAllAvailableTags();
       if (availableTags.length > 0) {
@@ -573,11 +536,108 @@ export class StudyView extends ItemView {
       });
     } else if (this.sessionState === 'lobby') {
       const matchingCount = this.getFilteredCards().length;
-      this.toolbarEl.createDiv({
-        cls: 'seelearn-counter-badge',
-        text: `В очереди: ${matchingCount}`,
+      const currentLimit = this.plugin.settings.sessionCardLimit ?? 'all';
+      const effectiveCount =
+        typeof currentLimit === 'number' && currentLimit < matchingCount
+          ? currentLimit
+          : matchingCount;
+
+      const badgeText =
+        typeof currentLimit === 'number' && currentLimit < matchingCount
+          ? `В очереди: ${effectiveCount} из ${matchingCount}`
+          : `В очереди: ${matchingCount}`;
+
+      const badge = this.toolbarEl.createEl('button', {
+        cls: 'seelearn-counter-badge is-interactive',
+        title: 'Лимит карточек на сессию. Нажмите, чтобы изменить',
+      });
+      badge.createSpan({ text: badgeText });
+      badge.createSpan({ cls: 'seelearn-badge-chevron', text: ' ▾' });
+
+      badge.addEventListener('click', (e: MouseEvent) => {
+        e.stopPropagation();
+        this.openLimitMenu(e, badge, matchingCount);
       });
     }
+  }
+
+  /**
+   * Opens the card limit selection menu on counter badge click.
+   */
+  private openLimitMenu(e: MouseEvent, targetEl: HTMLElement, totalAvailable: number): void {
+    const menu = new Menu();
+    const currentLimit = this.plugin.settings.sessionCardLimit ?? 'all';
+
+    menu.addItem((item) => {
+      item.setTitle('Лимит карточек на сессию').setDisabled(true);
+    });
+    menu.addSeparator();
+
+    // Standard preset candidates: 10, 20, 50, 100
+    // "когда карточек в пуле меньше, опции лишние не показывать (всего карт 22, опции 50 и сто скрыть)"
+    const standardPresets = [10, 20, 50, 100];
+    const validPresets = standardPresets.filter((n) => n < totalAvailable);
+
+    // If current limit is a custom number < totalAvailable not in standardPresets, include it in sorted order
+    const numericOptions = [...validPresets];
+    if (
+      typeof currentLimit === 'number' &&
+      currentLimit < totalAvailable &&
+      !numericOptions.includes(currentLimit)
+    ) {
+      numericOptions.push(currentLimit);
+      numericOptions.sort((a, b) => a - b);
+    }
+
+    for (const num of numericOptions) {
+      const isCustom = !standardPresets.includes(num);
+      menu.addItem((item) => {
+        item
+          .setTitle(isCustom ? `${num} карт (свой лимит)` : `${num} карт`)
+          .setChecked(currentLimit === num)
+          .onClick(async () => {
+            this.plugin.settings.sessionCardLimit = num;
+            await this.plugin.saveSettings();
+            this.renderAll();
+          });
+      });
+    }
+
+    // Option "Все доступные (totalAvailable)"
+    menu.addItem((item) => {
+      item
+        .setTitle(`Все доступные (${totalAvailable})`)
+        .setChecked(currentLimit === 'all' || (typeof currentLimit === 'number' && currentLimit >= totalAvailable))
+        .onClick(async () => {
+          this.plugin.settings.sessionCardLimit = 'all';
+          await this.plugin.saveSettings();
+          this.renderAll();
+        });
+    });
+
+    menu.addSeparator();
+
+    // Option "Указать свой лимит..."
+    menu.addItem((item) => {
+      item
+        .setTitle('Указать свой лимит...')
+        .setIcon('sliders-horizontal')
+        .onClick(() => {
+          new CustomLimitModal(
+            this.app,
+            currentLimit,
+            totalAvailable,
+            async (newLimit) => {
+              this.plugin.settings.sessionCardLimit = newLimit;
+              await this.plugin.saveSettings();
+              this.renderAll();
+            }
+          ).open();
+        });
+    });
+
+    const rect = targetEl.getBoundingClientRect();
+    menu.showAtPosition({ x: rect.left, y: rect.bottom + 6 });
   }
 
   /**
@@ -2017,6 +2077,105 @@ export class SaveTestModal extends Modal {
       this.onSave(preset);
       this.close();
     });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+/**
+ * Modal to configure custom session card limit.
+ */
+export class CustomLimitModal extends Modal {
+  private currentLimit: number | 'all';
+  private totalAvailable: number;
+  private onSave: (limit: number | 'all') => void;
+  private inputVal: string = '';
+
+  constructor(
+    app: App,
+    currentLimit: number | 'all',
+    totalAvailable: number,
+    onSave: (limit: number | 'all') => void
+  ) {
+    super(app);
+    this.currentLimit = currentLimit;
+    this.totalAvailable = totalAvailable;
+    this.onSave = onSave;
+    this.inputVal = typeof currentLimit === 'number' ? String(currentLimit) : '';
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    this.modalEl.addClass('seelearn-custom-limit-modal');
+    contentEl.addClass('seelearn-custom-limit-modal');
+
+    contentEl.createEl('h2', { text: 'Лимит карточек на сессию' });
+    contentEl.createEl('p', {
+      cls: 'seelearn-modal-desc',
+      text: `Укажите максимальное число карточек для одной учебной сессии. Доступно в текущей выборке: ${this.totalAvailable}.`,
+    });
+
+    new Setting(contentEl)
+      .setName('Число карточек')
+      .setDesc('Введите число больше 0 или оставьте пустым для прохождения всех карт.')
+      .addText((text) => {
+        text
+          .setPlaceholder(`Все (${this.totalAvailable})`)
+          .setValue(this.inputVal)
+          .onChange((val) => {
+            this.inputVal = val.trim();
+          });
+        text.inputEl.type = 'number';
+        text.inputEl.min = '1';
+        text.inputEl.focus();
+        text.inputEl.addEventListener('keydown', (e: KeyboardEvent) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            this.handleSave();
+          }
+        });
+      });
+
+    const btnRow = contentEl.createDiv({ cls: 'seelearn-modal-btn-row modal-button-container' });
+
+    const allBtn = btnRow.createEl('button', {
+      cls: 'seelearn-nav-btn',
+      text: 'Сбросить (Все)',
+    });
+    allBtn.addEventListener('click', () => {
+      this.onSave('all');
+      this.close();
+    });
+
+    const cancelBtn = btnRow.createEl('button', {
+      cls: 'seelearn-nav-btn',
+      text: 'Отмена',
+    });
+    cancelBtn.addEventListener('click', () => this.close());
+
+    const saveBtn = btnRow.createEl('button', {
+      cls: 'seelearn-nav-btn mod-cta',
+      text: 'Зафиксировать лимит',
+    });
+    saveBtn.addEventListener('click', () => this.handleSave());
+  }
+
+  private handleSave(): void {
+    if (!this.inputVal || this.inputVal.toLowerCase() === 'all') {
+      this.onSave('all');
+      this.close();
+      return;
+    }
+    const parsed = parseInt(this.inputVal, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      this.onSave(parsed);
+      this.close();
+    } else {
+      new Notice('Пожалуйста, введите положительное число');
+    }
   }
 
   onClose(): void {

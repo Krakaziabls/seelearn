@@ -116,6 +116,27 @@ export class SeeLearnSettingTab extends PluginSettingTab {
     containerEl.createEl('h3', { text: 'Управление сессией и алгоритмы SRS' });
 
     new Setting(containerEl)
+      .setName('Лимит карточек на сессию по умолчанию')
+      .setDesc('Ограничение количества карточек для одной учебной сессии (число, например 20, или "all" для прохождения всех доступных карт).')
+      .addText((text) =>
+        text
+          .setPlaceholder('all')
+          .setValue(String(this.plugin.settings.sessionCardLimit ?? 'all'))
+          .onChange(async (val) => {
+            const trimmed = val.trim();
+            if (!trimmed || trimmed.toLowerCase() === 'all') {
+              this.plugin.settings.sessionCardLimit = 'all';
+            } else {
+              const parsed = parseInt(trimmed, 10);
+              if (!isNaN(parsed) && parsed > 0) {
+                this.plugin.settings.sessionCardLimit = parsed;
+              }
+            }
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
       .setName('Лимит новых карт за сессию')
       .setDesc('Максимальное количество новых карточек для включения в одну учебную сессию.')
       .addText((text) =>
