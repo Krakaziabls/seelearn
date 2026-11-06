@@ -10,7 +10,8 @@
     "setup:vault": "./scripts/setup-dev-vault.sh",
     "verify": "tsc -noEmit -skipLibCheck && node esbuild.test.mjs && node esbuild.config.mjs production",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-    "test": "node esbuild.test.mjs"
+    "test": "node esbuild.test.mjs",
+    "release": "node scripts/release.mjs"
   },
   "keywords": [
     "obsidian",
