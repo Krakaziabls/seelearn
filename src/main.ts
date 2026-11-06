@@ -1,7 +1,7 @@
 import { Plugin, WorkspaceLeaf, TFile } from 'obsidian';
 import { DEFAULT_SETTINGS, Flashcard, SeeLearnSettings, ValidationWarning } from './types';
 import { SeeLearnSettingTab } from './settings';
-import { extractGlobalTopics, parseCardsFromMarkdown, shouldIndexFile } from './parser';
+import { extractFileCardSize, extractGlobalTopics, parseCardsFromMarkdown, shouldIndexFile } from './parser';
 import { StudyView, VIEW_TYPE_SEELEARN } from './view';
 import { StorageManager } from './storage';
 import { OnboardingManager } from './onboarding';
@@ -336,12 +336,14 @@ export default class SeeLearnPlugin extends Plugin {
       const content = await this.app.vault.read(file);
       const fileCache = this.app.metadataCache.getFileCache(file);
       const globalTopics = extractGlobalTopics(fileCache?.frontmatter, this.settings);
+      const fileCardSize = extractFileCardSize(fileCache?.frontmatter, this.settings.cardSizeProperty);
 
       const result = parseCardsFromMarkdown(
         file.path,
         file.basename,
         content,
-        globalTopics
+        globalTopics,
+        fileCardSize
       );
 
       this.fileCardsMap.set(file.path, result.cards);

@@ -1,6 +1,6 @@
 import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type SeeLearnPlugin from './main';
-import { RevealMode } from './types';
+import { CardSizePreset, RevealMode } from './types';
 
 export class SeeLearnSettingTab extends PluginSettingTab {
   plugin: SeeLearnPlugin;
@@ -110,6 +110,52 @@ export class SeeLearnSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.autoFlipOnSpace = value;
             await this.plugin.saveSettings();
+          })
+      );
+
+    containerEl.createEl('h3', { text: 'Размеры карточек (Card Sizing)' });
+
+    new Setting(containerEl)
+      .setName('Свойство размера карточки в файле (Card Size Property Name)')
+      .setDesc('Имя свойства в YAML Frontmatter, определяющее размер карточек для всего файла (по умолчанию: card_size).')
+      .addText((text) =>
+        text
+          .setPlaceholder('card_size')
+          .setValue(this.plugin.settings.cardSizeProperty || 'card_size')
+          .onChange(async (value) => {
+            this.plugin.settings.cardSizeProperty = value.trim() || 'card_size';
+            await this.plugin.saveSettings();
+            await this.plugin.reloadAllCards();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Размер карточек по умолчанию (Default Card Size)')
+      .setDesc('Размер отображения для всех карточек, у которых не задан явный @size: или свойство в файле.')
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption('xs', 'Очень маленький (XS: 480x340)')
+          .addOption('s', 'Маленький (S: 560x400)')
+          .addOption('m', 'Стандартный / размер лобби (M: 640x460 - по умолчанию)')
+          .addOption('l', 'Большой (L: 730x520)')
+          .addOption('xl', 'Очень большой (XL: 820x580)')
+          .addOption('full', 'Во весь экран (Full)')
+          .setValue(this.plugin.settings.defaultCardSize || 'm')
+          .onChange(async (value: string) => {
+            this.plugin.settings.defaultCardSize = value as CardSizePreset;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Сбросить сохранённые размеры карточек')
+      .setDesc('Сбросить кастомные размеры карточек, измененные вручную во время сессий, вернув их к текущему дефолтному размеру плагина.')
+      .addButton((button) =>
+        button
+          .setButtonText('Сбросить размеры')
+          .onClick(async () => {
+            const count = this.plugin.storage.clearAllCardSizes();
+            new Notice(`SeeLearn: сброшены индивидуальные размеры для ${count} карточек.`);
           })
       );
 

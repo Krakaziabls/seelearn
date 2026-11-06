@@ -5,7 +5,9 @@ import {
   extractLocalTags,
   cleanTag,
   parseCardsFromMarkdown,
-  extractGlobalTopics
+  extractGlobalTopics,
+  extractCardSize,
+  extractFileCardSize
 } from '../src/parser';
 import { DEFAULT_SETTINGS } from '../src/types';
 
@@ -350,6 +352,110 @@ The capital of {{c1::France}} is {{c2::Paris}}.
 
   assert.notStrictEqual(card1.id, card2.id);
 });
+
+test('extractCardSize extracts valid presets and ignores invalid syntax', () => {
+  assert.strictEqual(extractCardSize('@size:xs'), 'xs');
+  assert.strictEqual(extractCardSize('#tag @size:s'), 's');
+  assert.strictEqual(extractCardSize('@size:m #topic'), 'm');
+  assert.strictEqual(extractCardSize('#tag1 @size:l #tag2'), 'l');
+  assert.strictEqual(extractCardSize('@size:xl'), 'xl');
+  assert.strictEqual(extractCardSize('@size:full'), 'full');
+  assert.strictEqual(extractCardSize('@size:XL'), 'xl');
+  assert.strictEqual(extractCardSize('@size:Full'), 'full');
+
+  // Non-matching or invalid presets
+  assert.strictEqual(extractCardSize('@size:medium'), undefined);
+  assert.strictEqual(extractCardSize('@size:huge'), undefined);
+  assert.strictEqual(extractCardSize('#tag'), undefined);
+  assert.strictEqual(extractCardSize(''), undefined);
+  assert.strictEqual(extractCardSize(undefined), undefined);
+
+  // Does not leak into tags
+  const tags = extractLocalTags('#tag1 @size:xl #tag2');
+  assert.deepStrictEqual(tags, ['tag1', 'tag2']);
+});
+
+test('extractFileCardSize parses frontmatter properties accurately', () => {
+  // Default property name (card_size)
+  assert.strictEqual(extractFileCardSize({ card_size: 'xl' }), 'xl');
+  assert.strictEqual(extractFileCardSize({ card_size: 'FULL' }), 'full');
+  assert.strictEqual(extractFileCardSize({ card_size: ['s'] }), 's');
+
+  // Custom property name
+  assert.strictEqual(
+    extractFileCardSize({ my_size: 'l' }, 'my_size'),
+    'l'
+  );
+  assert.strictEqual(
+    extractFileCardSize({ My_Size: 'xs' }, 'my_size'),
+    'xs'
+  );
+
+  // Missing or invalid
+  assert.strictEqual(extractFileCardSize(undefined), undefined);
+  assert.strictEqual(extractFileCardSize({}), undefined);
+  assert.strictEqual(extractFileCardSize({ card_size: 'unknown' }), undefined);
+});
+
+test('parseCardsFromMarkdown assigns cardSize and fileCardSize', () => {
+  const md = `
+%% @card #card1 @size:xl %%
+%% @front %%
+Card with explicit xl size
+%% @back %%
+Answer 1
+%% @end %%
+
+%% @card #card2 %%
+%% @front %%
+Card without explicit size
+%% @back %%
+Answer 2
+%% @end %%
+`;
+
+  const result = parseCardsFromMarkdown('notes/sizing.md', 'sizing.md', md, [], 's');
+  assert.strictEqual(result.cards.length, 2);
+
+  // Card 1: has explicit cardSize 'xl' and inherited fileCardSize 's'
+  assert.strictEqual(result.cards[0].cardSize, 'xl');
+  assert.strictEqual(result.cards[0].fileCardSize, 's');
+
+  // Card 2: has no explicit cardSize, but inherited fileCardSize 's'
+  assert.strictEqual(result.cards[1].cardSize, undefined);
+  assert.strictEqual(result.cards[1].fileCardSize, 's');
+});
+
+test('Card sizing 4-level priority resolution works consistently', () => {
+  const resolveCardSize = (
+    card: { cardSize?: string; fileCardSize?: string; id: string },
+    storageCardSizes: Record<string, string>,
+    defaultCardSize: string = 'm'
+  ): string => {
+    if (card.cardSize) return card.cardSize;
+    if (card.fileCardSize) return card.fileCardSize;
+    if (card.id in storageCardSizes) return storageCardSizes[card.id];
+    return defaultCardSize;
+  };
+
+  const cardAllExplicit = { id: 'c1', cardSize: 'xs', fileCardSize: 'xl' };
+  const cardFileOnly = { id: 'c2', fileCardSize: 'l' };
+  const cardCustomOnly = { id: 'c3' };
+  const cardDefaultOnly = { id: 'c4' };
+
+  const storageSizes = {
+    c1: 'full', // should be ignored because @size:xs takes precedence
+    c2: 'full', // should be ignored because fileCardSize 'l' takes precedence
+    c3: 's',    // applies because no @size: and no fileCardSize
+  };
+
+  assert.strictEqual(resolveCardSize(cardAllExplicit, storageSizes, 'm'), 'xs');
+  assert.strictEqual(resolveCardSize(cardFileOnly, storageSizes, 'm'), 'l');
+  assert.strictEqual(resolveCardSize(cardCustomOnly, storageSizes, 'm'), 's');
+  assert.strictEqual(resolveCardSize(cardDefaultOnly, storageSizes, 'm'), 'm');
+  assert.strictEqual(resolveCardSize(cardDefaultOnly, storageSizes, 'xl'), 'xl');
+});
+
 
 
 

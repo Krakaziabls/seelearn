@@ -372,6 +372,21 @@ button.seelearn-nav-help-btn:hover {
   margin: 0 auto;
 }
 
+.seelearn-card-wrapper.is-fullscreen,
+.seelearn-card-wrapper:has(.seelearn-size-full) {
+  max-width: 100%;
+}
+
+.seelearn-card-wrapper.is-fullscreen .seelearn-side-arrow.prev,
+.seelearn-card-wrapper:has(.seelearn-size-full) .seelearn-side-arrow.prev {
+  left: 12px;
+}
+
+.seelearn-card-wrapper.is-fullscreen .seelearn-side-arrow.next,
+.seelearn-card-wrapper:has(.seelearn-size-full) .seelearn-side-arrow.next {
+  right: 12px;
+}
+
 .seelearn-side-arrow {
   position: absolute;
   top: 50%;
@@ -426,18 +441,58 @@ button.seelearn-nav-help-btn:hover {
 .seelearn-card-container {
   display: flex;
   flex-direction: column;
-  width: 100%;
-  max-width: 820px;
+  width: 640px;
+  max-width: 100%;
   min-height: 280px;
-  max-height: 100%;
-  height: 100%;
+  max-height: calc(100% - 20px);
+  height: 460px;
   background-color: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-l, 12px);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
   overflow: hidden;
   touch-action: pan-y;
+  position: relative;
   transition: transform 0.25s ease, box-shadow 0.2s ease;
+}
+
+.seelearn-card-container.is-resizing {
+  transition: none !important;
+  user-select: none !important;
+}
+
+/* Card Sizing Presets */
+.seelearn-card-container.seelearn-size-xs {
+  width: 480px;
+  height: 340px;
+}
+
+.seelearn-card-container.seelearn-size-s {
+  width: 560px;
+  height: 400px;
+}
+
+.seelearn-card-container.seelearn-size-m {
+  width: 640px;
+  height: 460px;
+}
+
+.seelearn-card-container.seelearn-size-l {
+  width: 730px;
+  height: 520px;
+}
+
+.seelearn-card-container.seelearn-size-xl {
+  width: 820px;
+  height: 580px;
+}
+
+.seelearn-card-container.seelearn-size-full {
+  width: calc(100% - 160px) !important;
+  max-width: calc(100% - 160px) !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  border-radius: var(--radius-m, 8px);
 }
 
 .seelearn-card-container:hover {
@@ -489,6 +544,8 @@ button.seelearn-nav-help-btn:hover {
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
+  position: relative;
+  z-index: 5;
 }
 
 .seelearn-header-left {
@@ -541,26 +598,21 @@ button.seelearn-nav-help-btn:hover {
   overflow: hidden;
 }
 
-.seelearn-card-tags,
-.seelearn-file-link {
-  flex: 1 1 0;
+.seelearn-card-tags {
+  flex: 1 1 auto;
   min-width: 0;
-  max-width: 50%;
+  max-width: 100%;
   overflow-x: auto;
   white-space: nowrap;
   scrollbar-width: none;
   -ms-overflow-style: none;
-}
-
-.seelearn-card-tags::-webkit-scrollbar,
-.seelearn-file-link::-webkit-scrollbar {
-  display: none;
-}
-
-.seelearn-card-tags {
   display: flex;
   align-items: center;
   gap: 5px;
+}
+
+.seelearn-card-tags::-webkit-scrollbar {
+  display: none;
 }
 
 .seelearn-card-tag-pill {
@@ -581,19 +633,6 @@ button.seelearn-nav-help-btn:hover {
   margin-left: auto;
 }
 
-.seelearn-file-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 0.8em;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.seelearn-file-link:hover {
-  color: var(--text-accent);
-}
-
 .seelearn-icon-inline {
   display: inline-flex;
   align-items: center;
@@ -605,7 +644,8 @@ button.seelearn-nav-help-btn:hover {
   height: 14px;
 }
 
-.seelearn-jump-btn {
+.seelearn-jump-btn,
+.seelearn-card-fullscreen-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -619,11 +659,42 @@ button.seelearn-nav-help-btn:hover {
   cursor: pointer;
   transition: all 0.15s ease;
   flex-shrink: 0;
+  position: relative;
 }
 
-.seelearn-jump-btn:hover {
+.seelearn-jump-btn:hover,
+.seelearn-card-fullscreen-btn:hover {
   color: var(--text-accent);
   border-color: var(--interactive-accent);
+}
+
+.seelearn-card-fullscreen-btn.is-active {
+  color: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  background-color: var(--background-modifier-hover);
+}
+
+.seelearn-card-resize-handle {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  opacity: 0.45;
+  transition: opacity 0.15s ease, color 0.15s ease;
+  z-index: 15;
+  touch-action: none;
+}
+
+.seelearn-card-resize-handle:hover,
+.seelearn-card-container.is-resizing .seelearn-card-resize-handle {
+  opacity: 1;
+  color: var(--interactive-accent);
 }
 
 /* Card Body & Markdown Content */
@@ -1595,6 +1666,54 @@ button.seelearn-nav-help-btn:hover {
   gap: 14px !important;
   margin-top: 20px !important;
 }
+
+/* --------------------------------------------------------------------------
+   Mobile Overrides for Card Sizing & Footprint
+   -------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+  .seelearn-card-wrapper {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .seelearn-card-container,
+  .seelearn-card-container.seelearn-size-xs,
+  .seelearn-card-container.seelearn-size-s,
+  .seelearn-card-container.seelearn-size-m,
+  .seelearn-card-container.seelearn-size-l,
+  .seelearn-card-container.seelearn-size-xl,
+  .seelearn-card-container.seelearn-size-full {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+  }
+  .seelearn-card-resize-handle {
+    display: none !important;
+  }
+}
+
+.is-mobile .seelearn-card-wrapper {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.is-mobile .seelearn-card-container,
+.is-mobile .seelearn-card-container.seelearn-size-xs,
+.is-mobile .seelearn-card-container.seelearn-size-s,
+.is-mobile .seelearn-card-container.seelearn-size-m,
+.is-mobile .seelearn-card-container.seelearn-size-l,
+.is-mobile .seelearn-card-container.seelearn-size-xl,
+.is-mobile .seelearn-card-container.seelearn-size-full {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+}
+
+.is-mobile .seelearn-card-resize-handle {
+  display: none !important;
+}
+
 
 
 

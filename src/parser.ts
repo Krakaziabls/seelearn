@@ -1,5 +1,5 @@
 import { MetadataCache, TFile } from 'obsidian';
-import { Flashcard, ParsedFileResult, SeeLearnSettings, ValidationWarning } from './types';
+import { CardSizePreset, Flashcard, ParsedFileResult, SeeLearnSettings, ValidationWarning } from './types';
 import { generateCardId, normalizeCardContent } from './hash';
 import { getClozeIndices, hasClozeDeletions, renderClozeBack, renderClozeFront } from './cloze';
 
@@ -8,6 +8,15 @@ export type MarkerType = 'card' | 'front' | 'back' | 'end';
 export interface MarkerMatch {
   type: MarkerType;
   args?: string;
+}
+
+/**
+ * Extracts card display size preset from @card header arguments (e.g. @size:xs ... @size:full).
+ */
+export function extractCardSize(args?: string): CardSizePreset | undefined {
+  if (!args) return undefined;
+  const match = args.match(/(?:^|\s)@size:(xs|s|m|l|xl|full)(?:\s|$)/i);
+  return match ? (match[1].toLowerCase() as CardSizePreset) : undefined;
 }
 
 /**
@@ -193,13 +202,44 @@ export function extractGlobalTopics(
 }
 
 /**
+ * Extracts file-level default card display size preset from Frontmatter.
+ */
+export function extractFileCardSize(
+  frontmatter: Record<string, any> | undefined,
+  propName: string = 'card_size'
+): CardSizePreset | undefined {
+  if (!frontmatter) return undefined;
+  const targetPropKey = (propName || 'card_size').trim().toLowerCase();
+  const validPresets: CardSizePreset[] = ['xs', 's', 'm', 'l', 'xl', 'full'];
+
+  for (const [key, value] of Object.entries(frontmatter)) {
+    if (key.toLowerCase() === targetPropKey && value !== undefined && value !== null) {
+      if (Array.isArray(value) && value.length > 0) {
+        const cleaned = String(value[0]).trim().toLowerCase();
+        if (validPresets.includes(cleaned as CardSizePreset)) {
+          return cleaned as CardSizePreset;
+        }
+      } else if (typeof value === 'string') {
+        const cleaned = value.trim().toLowerCase();
+        if (validPresets.includes(cleaned as CardSizePreset)) {
+          return cleaned as CardSizePreset;
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Parses markdown file content into Flashcards and records validation warnings.
  */
 export function parseCardsFromMarkdown(
   filePath: string,
   fileName: string,
   content: string,
-  globalTopics: string[] = []
+  globalTopics: string[] = [],
+  fileCardSize?: CardSizePreset
 ): ParsedFileResult {
   const lines = content.split(/\r?\n/);
   const cards: Flashcard[] = [];
@@ -367,6 +407,7 @@ export function parseCardsFromMarkdown(
             const localTags = extractLocalTags(cardArgs);
             const mergedTags = Array.from(new Set([...globalTopics, ...localTags]));
             const customId = extractCustomId(cardArgs);
+            const cardSize = extractCardSize(cardArgs);
 
             const clozeIndices = isCloze ? getClozeIndices(rawFrontContent) : [];
 
@@ -410,6 +451,8 @@ export function parseCardsFromMarkdown(
                   tags: cardMergedTags,
                   globalTopics,
                   localTags: cardLocalTags,
+                  cardSize,
+                  fileCardSize,
                 });
               }
             } else {
@@ -450,6 +493,8 @@ export function parseCardsFromMarkdown(
                 tags: mergedTags,
                 globalTopics,
                 localTags,
+                cardSize,
+                fileCardSize,
               });
             }
           }

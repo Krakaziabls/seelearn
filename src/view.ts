@@ -13,13 +13,23 @@ import {
   Menu,
 } from 'obsidian';
 import type SeeLearnPlugin from './main';
-import { CardProgressRecord, Flashcard, SRSQueueFilter, TestPreset, ValidationWarning } from './types';
+import { CardProgressRecord, CardSizePreset, Flashcard, SRSQueueFilter, TestPreset, ValidationWarning } from './types';
 import { fisherYatesShuffle, interleaveCards } from './shuffle';
 import { prepareSessionPool } from './session';
 import { getSRSIntervalPreviews, isCardDue, isCardLeech, isCardNew, SRSRating } from './srs';
 import { OnboardingManager } from './onboarding';
 
 export const VIEW_TYPE_SEELEARN = 'seelearn-study-view';
+
+const CARD_SIZE_PRESETS: CardSizePreset[] = ['xs', 's', 'm', 'l', 'xl'];
+const PRESET_DIMENSIONS: Record<CardSizePreset, { width: number; height: number }> = {
+  xs: { width: 480, height: 340 },
+  s: { width: 560, height: 400 },
+  m: { width: 640, height: 460 },
+  l: { width: 730, height: 520 },
+  xl: { width: 820, height: 580 },
+  full: { width: 9999, height: 9999 },
+};
 
 function formatFlipsCount(count: number): string {
   const mod10 = count % 10;
@@ -176,11 +186,16 @@ export class StudyView extends ItemView {
 
     this.registerTouchGestures();
 
+    this.registerDomEvent(window, 'blur', () => {
+      this.clearActiveTooltips();
+    });
+
     this.sessionState = 'lobby';
     this.resetSession();
   }
 
   async onClose(): Promise<void> {
+    this.clearActiveTooltips();
     this.cleanupCardComponent();
     this.contentEl.empty();
   }
@@ -193,6 +208,7 @@ export class StudyView extends ItemView {
    * Begins an active learning or testing session with a frozen queue snapshot.
    */
   public startSession(): void {
+    this.clearActiveTooltips();
     let filtered = this.getFilteredCards();
     if (filtered.length === 0) {
       new Notice('Нет доступных карточек для начала сессии');
@@ -228,6 +244,7 @@ export class StudyView extends ItemView {
    * Resets the session queue according to currently active filters and scope.
    */
   public resetSession(keepIndex = false): void {
+    this.clearActiveTooltips();
     let filtered = this.getFilteredCards();
 
     if (this.sessionState === 'active') {
@@ -380,6 +397,7 @@ export class StudyView extends ItemView {
   }
 
   private renderAll(): void {
+    this.clearActiveTooltips();
     this.renderToolbar();
     this.renderTagsBar();
     this.renderCardArea();
@@ -390,6 +408,7 @@ export class StudyView extends ItemView {
    * Renders the top toolbar with Mode Switcher (Ботать / Проверить знания), Scope Selector, Shuffle, and Stats.
    */
   private renderToolbar(): void {
+    this.clearActiveTooltips();
     this.toolbarEl.empty();
 
     const leftGroup = this.toolbarEl.createDiv({ cls: 'seelearn-toolbar-group left' });
@@ -399,10 +418,13 @@ export class StudyView extends ItemView {
     const isTest = this.isTestMode();
     const modeToggle = leftGroup.createEl('button', {
       cls: `seelearn-mode-toggle ${isTest ? 'is-test' : 'is-learn'}`,
-      title: isTest
-        ? 'Режим проверки знаний (SRS). Нажмите для переключения на режим «Ботать»'
-        : 'Режим «Ботать» (чтение). Нажмите для переключения на режим «Проверка знаний»',
     });
+    setTooltip(
+      modeToggle,
+      isTest
+        ? 'Режим проверки знаний (SRS). Нажмите для переключения на режим «Ботать»'
+        : 'Режим «Ботать» (чтение). Нажмите для переключения на режим «Проверка знаний»'
+    );
     const modeIcon = modeToggle.createSpan({ cls: 'seelearn-icon-inline' });
     setIcon(modeIcon, isTest ? 'crosshair' : 'book-open');
     modeToggle.createSpan({
@@ -465,8 +487,8 @@ export class StudyView extends ItemView {
       const allPill = srsGroup.createEl('button', {
         cls: `seelearn-srs-pill ${this.srsFilter === 'all' ? 'is-active' : ''}`,
         text: `Все (${breakdown.total})`,
-        title: 'Показать все карточки в выбранной области',
       });
+      setTooltip(allPill, 'Показать все карточки в выбранной области');
       allPill.addEventListener('click', () => {
         this.srsFilter = 'all';
         this.sessionState = 'lobby';
@@ -476,8 +498,8 @@ export class StudyView extends ItemView {
       const duePill = srsGroup.createEl('button', {
         cls: `seelearn-srs-pill seelearn-pill-due ${this.srsFilter === 'due' ? 'is-active' : ''}`,
         text: `К повторению (${breakdown.due})`,
-        title: 'Карточки, запланированные на сегодня в этой папке/странице',
       });
+      setTooltip(duePill, 'Карточки, запланированные на сегодня в этой папке/странице');
       duePill.addEventListener('click', () => {
         this.srsFilter = 'due';
         this.sessionState = 'lobby';
@@ -487,8 +509,8 @@ export class StudyView extends ItemView {
       const newPill = srsGroup.createEl('button', {
         cls: `seelearn-srs-pill seelearn-pill-new ${this.srsFilter === 'new' ? 'is-active' : ''}`,
         text: `Новые (${breakdown.newCards})`,
-        title: 'Еще не изученные карточки в этой папке/странице',
       });
+      setTooltip(newPill, 'Еще не изученные карточки в этой папке/странице');
       newPill.addEventListener('click', () => {
         this.srsFilter = 'new';
         this.sessionState = 'lobby';
@@ -500,8 +522,8 @@ export class StudyView extends ItemView {
     if (this.plugin.warnings.length > 0) {
       const warnBadge = rightGroup.createEl('button', {
         cls: 'seelearn-badge seelearn-badge-warning',
-        title: 'Нажмите, чтобы просмотреть предупреждения валидации',
       });
+      setTooltip(warnBadge, 'Нажмите, чтобы просмотреть предупреждения валидации');
       setIcon(warnBadge.createSpan({ cls: 'seelearn-icon-inline' }), 'alert-triangle');
       warnBadge.createSpan({ text: ` Ошибки: ${this.plugin.warnings.length}` });
       warnBadge.addEventListener('click', () => {
@@ -529,8 +551,8 @@ export class StudyView extends ItemView {
 
       const badge = this.toolbarEl.createEl('button', {
         cls: 'seelearn-counter-badge is-interactive',
-        title: 'Лимит карточек на сессию. Нажмите, чтобы изменить',
       });
+      setTooltip(badge, 'Лимит карточек на сессию. Нажмите, чтобы изменить');
       badge.createSpan({ text: badgeText });
       const chevronEl = badge.createSpan({ cls: 'seelearn-badge-chevron seelearn-icon-inline' });
       setIcon(chevronEl, 'chevron-down');
@@ -625,6 +647,7 @@ export class StudyView extends ItemView {
    * Renders tag chips with search input when count > 6.
    */
   private renderTagsBar(): void {
+    this.clearActiveTooltips();
     this.tagsBarEl.empty();
 
     // Hide completely when not in lobby (active session or finished summary)
@@ -748,10 +771,8 @@ export class StudyView extends ItemView {
   /**
    * Renders the card container, header, progress track, and markdown content.
    */
-  /**
-   * Renders the card container, header, progress track, and markdown content.
-   */
   private async renderCardArea(): Promise<void> {
+    this.clearActiveTooltips();
     this.cleanupCardComponent();
     this.cardAreaEl.empty();
 
@@ -781,16 +802,31 @@ export class StudyView extends ItemView {
     // Side navigation arrow: Previous
     const prevArrow = cardWrapper.createEl('button', {
       cls: 'seelearn-side-arrow prev',
-      title: 'Предыдущая карточка (ArrowLeft)',
     });
+    setTooltip(prevArrow, 'Предыдущая карточка (ArrowLeft)');
     setIcon(prevArrow, 'chevron-left');
     prevArrow.disabled = this.currentIndex === 0;
     prevArrow.addEventListener('click', (e) => {
       e.stopPropagation();
+      this.clearActiveTooltips();
       this.prevCard();
     });
 
     const cardContainer = cardWrapper.createDiv({ cls: 'seelearn-card-container' });
+    let currentSize: CardSizePreset;
+    if (card.cardSize) {
+      currentSize = card.cardSize;
+    } else if (card.fileCardSize) {
+      currentSize = card.fileCardSize;
+    } else if (this.plugin.storage.hasCustomCardSize(card.id)) {
+      currentSize = this.plugin.storage.getCardSize(card.id, this.plugin.settings.defaultCardSize);
+    } else {
+      currentSize = this.plugin.settings.defaultCardSize || 'm';
+    }
+    let lastNonFullPreset: CardSizePreset = currentSize !== 'full' ? currentSize : 'm';
+
+    cardContainer.addClass(`seelearn-size-${currentSize}`);
+    cardWrapper.toggleClass('is-fullscreen', currentSize === 'full');
     if (this.plugin.settings.enable3DFlip) {
       cardContainer.addClass('seelearn-enable-3d');
     }
@@ -819,22 +855,22 @@ export class StudyView extends ItemView {
     if (!card.hasBack) {
       progressPill.setText('ИНФО');
       progressPill.addClass('is-info');
-      progressPill.setAttribute('title', 'Односторонняя карточка для изучения информации');
+      setTooltip(progressPill, 'Односторонняя карточка для изучения информации');
     } else if (this.isTestMode()) {
       if (isLeech) {
         progressPill.addClass('is-leech');
         const iconSpan = progressPill.createSpan({ cls: 'seelearn-icon-inline' });
         setIcon(iconSpan, 'alert-circle');
         progressPill.createSpan({ text: ` Пиявка (${progress?.lapses || 0})` });
-        progressPill.setAttribute(
-          'title',
+        setTooltip(
+          progressPill,
           `Карточка вызывает частые ошибки (${progress?.lapses} сбоев). Рекомендуется переформулировать или разбить на простые факты.`
         );
       } else if (progress && (progress.repetitions > 0 || progress.lapses > 0)) {
         progressPill.setText(`Интервал: ${progress.interval} дн.`);
         progressPill.addClass('is-learned');
-        progressPill.setAttribute(
-          'title',
+        setTooltip(
+          progressPill,
           `Повторений: ${progress.repetitions}, Фактор легкости: ${progress.easeFactor}, Забываний: ${progress.lapses}`
         );
       } else {
@@ -846,7 +882,7 @@ export class StudyView extends ItemView {
       progressPill.addClass('is-learn');
     }
 
-    // Header Meta Block: Balanced Tags and File Link (50% each)
+    // Header Meta Block: Tags List
     const headerMeta = cardHeader.createDiv({ cls: 'seelearn-header-meta' });
 
     // Tags list container with overflow scroll
@@ -857,30 +893,141 @@ export class StudyView extends ItemView {
       }
     }
 
-    // File Link container with overflow scroll
-    const fileLabel = headerMeta.createDiv({
-      cls: 'seelearn-file-link',
-      title: `Файл: ${card.filePath}, строка ${card.lineStart}`,
-    });
-    setIcon(fileLabel.createSpan({ cls: 'seelearn-icon-inline' }), 'file-text');
-    fileLabel.createSpan({ text: `${card.fileName}:${card.lineStart}` });
-    fileLabel.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.openCardInNote(card);
-    });
-
     const headerRight = cardHeader.createDiv({ cls: 'seelearn-header-right' });
 
-    // Jump to Note Button (strictly icon-only)
+    // Jump to Note Button with fast native Obsidian tooltip
     const jumpBtn = headerRight.createEl('button', {
       cls: 'seelearn-jump-btn',
-      title: 'Открыть заметку на этой карточке',
     });
-    jumpBtn.setAttribute('aria-label', 'Открыть заметку на этой карточке');
-    setIcon(jumpBtn.createSpan({ cls: 'seelearn-icon-inline' }), 'external-link');
+    setTooltip(jumpBtn, `${card.fileName}:${card.lineStart}`);
+    const jumpIconSpan = jumpBtn.createSpan({ cls: 'seelearn-icon-inline' });
+    setIcon(jumpIconSpan, 'external-link');
+
     jumpBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      this.clearActiveTooltips();
       this.openCardInNote(card);
+    });
+
+    // Fullscreen Toggle Button (strictly icon-only: maximize-2 / minimize-2)
+    const fullscreenBtn = headerRight.createEl('button', {
+      cls: `seelearn-card-fullscreen-btn ${currentSize === 'full' ? 'is-active' : ''}`,
+    });
+    setTooltip(
+      fullscreenBtn,
+      currentSize === 'full' ? 'Вернуть стандартный размер' : 'Растянуть на весь экран'
+    );
+    const fsIconSpan = fullscreenBtn.createSpan({ cls: 'seelearn-icon-inline' });
+    setIcon(fsIconSpan, currentSize === 'full' ? 'minimize-2' : 'maximize-2');
+
+    fullscreenBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isFull = currentSize === 'full';
+      let nextSize: CardSizePreset;
+      if (isFull) {
+        nextSize = lastNonFullPreset;
+      } else {
+        lastNonFullPreset = currentSize;
+        nextSize = 'full';
+      }
+
+      CARD_SIZE_PRESETS.forEach((p) => cardContainer.removeClass(`seelearn-size-${p}`));
+      cardContainer.removeClass('seelearn-size-full');
+
+      cardContainer.addClass(`seelearn-size-${nextSize}`);
+      currentSize = nextSize;
+
+      // Only persist to storage if the card has NO explicit @size: and NO fileCardSize
+      if (!card.cardSize && !card.fileCardSize) {
+        this.plugin.storage.setCardSize(card.id, nextSize);
+      }
+
+      cardWrapper.toggleClass('is-fullscreen', nextSize === 'full');
+      fullscreenBtn.toggleClass('is-active', nextSize === 'full');
+      setTooltip(
+        fullscreenBtn,
+        nextSize === 'full' ? 'Вернуть стандартный размер' : 'Растянуть на весь экран'
+      );
+      fsIconSpan.empty();
+      setIcon(fsIconSpan, nextSize === 'full' ? 'minimize-2' : 'maximize-2');
+    });
+
+    // Interactive corner resize handle (bottom-right)
+    const resizeHandle = cardContainer.createDiv({
+      cls: 'seelearn-card-resize-handle',
+    });
+    setTooltip(resizeHandle, 'Потяните для изменения размера');
+    resizeHandle.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="8.5" y1="1.5" x2="1.5" y2="8.5"></line><line x1="8.5" y1="5.5" x2="5.5" y2="8.5"></line></svg>`;
+
+    let startX = 0;
+    let startY = 0;
+    let startWidth = 0;
+    let startHeight = 0;
+    let isDragging = false;
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      if (!isDragging) return;
+      const dx = moveEvent.clientX - startX;
+      const dy = moveEvent.clientY - startY;
+      const newW = Math.min(820, Math.max(360, startWidth + dx));
+      const newH = Math.min(640, Math.max(260, startHeight + dy));
+      cardContainer.style.width = `${newW}px`;
+      cardContainer.style.height = `${newH}px`;
+    };
+
+    const onPointerUp = () => {
+      if (!isDragging) return;
+      isDragging = false;
+      cardContainer.removeClass('is-resizing');
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+
+      const finalW = cardContainer.offsetWidth;
+      const finalH = cardContainer.offsetHeight;
+
+      cardContainer.style.width = '';
+      cardContainer.style.height = '';
+
+      let closestPreset: CardSizePreset = 'm';
+      let minDiff = Infinity;
+      for (const p of CARD_SIZE_PRESETS) {
+        const targetDim = PRESET_DIMENSIONS[p];
+        const diff = Math.hypot(finalW - targetDim.width, finalH - targetDim.height);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closestPreset = p;
+        }
+      }
+
+      CARD_SIZE_PRESETS.forEach((p) => cardContainer.removeClass(`seelearn-size-${p}`));
+      cardContainer.removeClass('seelearn-size-full');
+      cardContainer.addClass(`seelearn-size-${closestPreset}`);
+      currentSize = closestPreset;
+      lastNonFullPreset = closestPreset;
+
+      // Only persist to storage if the card has NO explicit @size: and NO fileCardSize
+      if (!card.cardSize && !card.fileCardSize) {
+        this.plugin.storage.setCardSize(card.id, closestPreset);
+      }
+
+      cardWrapper.removeClass('is-fullscreen');
+      fullscreenBtn.removeClass('is-active');
+      setTooltip(fullscreenBtn, 'Растянуть на весь экран');
+      fsIconSpan.empty();
+      setIcon(fsIconSpan, 'maximize-2');
+    };
+
+    resizeHandle.addEventListener('pointerdown', (downEvent: PointerEvent) => {
+      downEvent.stopPropagation();
+      downEvent.preventDefault();
+      isDragging = true;
+      startX = downEvent.clientX;
+      startY = downEvent.clientY;
+      startWidth = cardContainer.offsetWidth;
+      startHeight = cardContainer.offsetHeight;
+      cardContainer.addClass('is-resizing');
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
     });
 
     // Card Body
@@ -890,6 +1037,12 @@ export class StudyView extends ItemView {
     this.activeCardComponent = new Component();
     this.addChild(this.activeCardComponent);
     this.activeCardComponent.load();
+    this.activeCardComponent.register(() => {
+      if (isDragging) {
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+      }
+    });
 
     if (!card.hasBack) {
       // FRONT-ONLY INFO CARD
@@ -972,12 +1125,13 @@ export class StudyView extends ItemView {
 
     const nextArrow = cardWrapper.createEl('button', {
       cls: 'seelearn-side-arrow next',
-      title: canAdvanceOnLast ? 'Завершить сессию (ArrowRight)' : 'Следующая карточка (ArrowRight)',
     });
+    setTooltip(nextArrow, canAdvanceOnLast ? 'Завершить сессию (ArrowRight)' : 'Следующая карточка (ArrowRight)');
     setIcon(nextArrow, 'chevron-right');
     nextArrow.disabled = isLastCard && !canAdvanceOnLast;
     nextArrow.addEventListener('click', (e) => {
       e.stopPropagation();
+      this.clearActiveTooltips();
       this.nextCard();
     });
   }
@@ -1094,8 +1248,8 @@ export class StudyView extends ItemView {
       const saveTestBtn = actionsRow.createEl('button', {
         cls: 'seelearn-nav-btn seelearn-btn-save-test',
         text: 'Сохранить как тест...',
-        title: 'Упаковать текущую выборку карточек в быстрый тест для повторного прохождения',
       });
+      setTooltip(saveTestBtn, 'Упаковать текущую выборку карточек в быстрый тест для повторного прохождения');
       setIcon(saveTestBtn.createSpan({ cls: 'seelearn-icon-inline' }), 'bookmark');
       saveTestBtn.addEventListener('click', () => {
         new SaveTestModal(
@@ -1145,8 +1299,8 @@ export class StudyView extends ItemView {
         const playBtn = right.createEl('button', {
           cls: 'seelearn-nav-btn mod-cta mod-small',
           text: 'Запустить',
-          title: 'Пройти этот тест',
         });
+        setTooltip(playBtn, 'Пройти этот тест');
         setIcon(playBtn.createSpan({ cls: 'seelearn-icon-inline' }), 'play');
         playBtn.addEventListener('click', () => {
           this.startTestPreset(preset);
@@ -1154,8 +1308,8 @@ export class StudyView extends ItemView {
 
         const delBtn = right.createEl('button', {
           cls: 'clickable-icon seelearn-btn-icon',
-          title: 'Удалить тест',
         });
+        setTooltip(delBtn, 'Удалить тест');
         setIcon(delBtn, 'trash');
         delBtn.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -1239,7 +1393,7 @@ export class StudyView extends ItemView {
       else if (count > 25) level = 4;
 
       const cell = heatmapGrid.createDiv({ cls: `seelearn-heatmap-cell level-${level}` });
-      cell.setAttribute('title', `${dateStr}: ${count} повторений`);
+      setTooltip(cell, `${dateStr}: ${count} повторений`);
     }
 
     // Leech warning banner (if any leeches in vault)
@@ -1339,6 +1493,7 @@ topics:
    * Renders the bottom navigation bar with Learn Mode navigation and SRS ratings.
    */
   private renderNavBar(): void {
+    this.clearActiveTooltips();
     this.navBarEl.empty();
     this.navBarEl.style.display = 'flex';
 
@@ -1349,7 +1504,6 @@ topics:
     // Help button
     const helpBtn = actionsGroup.createEl('button', {
       cls: 'clickable-icon seelearn-btn-icon seelearn-nav-help-btn',
-      title: 'Шпаргалка и справка',
     });
     setIcon(helpBtn, 'help-circle');
     setTooltip(helpBtn, 'Шпаргалка и справка');
@@ -1360,10 +1514,6 @@ topics:
     // Shuffle button
     const shuffleBtn = actionsGroup.createEl('button', {
       cls: 'clickable-icon seelearn-btn-icon seelearn-nav-shuffle-btn',
-      title:
-        this.sessionState === 'active'
-          ? 'Перемешать оставшиеся карточки в очереди'
-          : 'Перемешать колоду',
     });
     setIcon(shuffleBtn, 'shuffle');
     setTooltip(
@@ -1379,7 +1529,6 @@ topics:
     // Refresh / Reindex button
     const refreshBtn = actionsGroup.createEl('button', {
       cls: 'clickable-icon seelearn-btn-icon seelearn-nav-refresh-btn',
-      title: 'Переиндексировать хранилище',
     });
     setIcon(refreshBtn, 'refresh-cw');
     setTooltip(refreshBtn, 'Переиндексировать хранилище');
@@ -1397,7 +1546,6 @@ topics:
     if (this.sessionState === 'active') {
       const exitBtn = rightNav.createEl('button', {
         cls: 'clickable-icon seelearn-btn-icon seelearn-nav-exit-btn',
-        title: 'Завершить сессию и перейти к итогам',
       });
       setIcon(exitBtn, 'log-out');
       setTooltip(exitBtn, 'Завершить сессию и перейти к итогам');
@@ -1426,8 +1574,11 @@ topics:
         const flipBtn = centerNav.createEl('button', {
           cls: 'seelearn-nav-btn mod-cta',
           text: flipText,
-          title: isLastCard && this.isFlipped ? 'Завершить сессию (Space)' : 'Перевернуть карточку (Space)',
         });
+        setTooltip(
+          flipBtn,
+          isLastCard && this.isFlipped ? 'Завершить сессию (Space)' : 'Перевернуть карточку (Space)'
+        );
         flipBtn.addEventListener('click', () => {
           if (isLastCard && this.isFlipped) {
             this.nextCard();
@@ -1444,14 +1595,15 @@ topics:
           cls: 'seelearn-nav-btn mod-cta',
           text: 'Понятно / Изучено (Space)',
         });
+        setTooltip(readBtn, 'Понятно / Изучено (Space)');
         readBtn.addEventListener('click', () => this.handleSRSRating('good'));
       } else if (!this.isFlipped) {
         // Front of two-sided card in test mode
         const flipBtn = centerNav.createEl('button', {
           cls: 'seelearn-nav-btn mod-cta',
           text: 'Показать ответ (Space)',
-          title: 'Перевернуть карточку (Space)',
         });
+        setTooltip(flipBtn, 'Перевернуть карточку (Space)');
         flipBtn.addEventListener('click', () => this.flipCard());
       } else {
         // Back of two-sided card: 4 SRS Rating Buttons with predicted intervals
@@ -1461,8 +1613,8 @@ topics:
         // [1] Снова
         const againBtn = centerNav.createEl('button', {
           cls: 'seelearn-nav-btn seelearn-btn-srs seelearn-btn-again',
-          title: 'Забыл ответ (клавиша 1)',
         });
+        setTooltip(againBtn, 'Забыл ответ (клавиша 1)');
         againBtn.createSpan({ cls: 'seelearn-srs-title', text: '[1] Снова' });
         againBtn.createSpan({ cls: 'seelearn-srs-badge', text: previews.again });
         againBtn.addEventListener('click', () => this.handleSRSRating('again'));
@@ -1470,8 +1622,8 @@ topics:
         // [2] Трудно
         const hardBtn = centerNav.createEl('button', {
           cls: 'seelearn-nav-btn seelearn-btn-srs seelearn-btn-hard',
-          title: 'Вспомнил с заметным трудом (клавиша 2)',
         });
+        setTooltip(hardBtn, 'Вспомнил с заметным трудом (клавиша 2)');
         hardBtn.createSpan({ cls: 'seelearn-srs-title', text: '[2] Трудно' });
         hardBtn.createSpan({ cls: 'seelearn-srs-badge', text: previews.hard });
         hardBtn.addEventListener('click', () => this.handleSRSRating('hard'));
@@ -1479,8 +1631,8 @@ topics:
         // [3] Хорошо (unify style, remove mod-cta)
         const goodBtn = centerNav.createEl('button', {
           cls: 'seelearn-nav-btn seelearn-btn-srs seelearn-btn-good',
-          title: 'Уверенно вспомнил (клавиша 3)',
         });
+        setTooltip(goodBtn, 'Уверенно вспомнил (клавиша 3)');
         goodBtn.createSpan({ cls: 'seelearn-srs-title', text: '[3] Хорошо' });
         goodBtn.createSpan({ cls: 'seelearn-srs-badge', text: previews.good });
         goodBtn.addEventListener('click', () => this.handleSRSRating('good'));
@@ -1488,8 +1640,8 @@ topics:
         // [4] Легко
         const easyBtn = centerNav.createEl('button', {
           cls: 'seelearn-nav-btn seelearn-btn-srs seelearn-btn-easy',
-          title: 'Мгновенный и легкий ответ (клавиша 4)',
         });
+        setTooltip(easyBtn, 'Мгновенный и легкий ответ (клавиша 4)');
         easyBtn.createSpan({ cls: 'seelearn-srs-title', text: '[4] Легко' });
         easyBtn.createSpan({ cls: 'seelearn-srs-badge', text: previews.easy });
         easyBtn.addEventListener('click', () => this.handleSRSRating('easy'));
@@ -1522,6 +1674,7 @@ topics:
   }
 
   private flipCard(): void {
+    this.clearActiveTooltips();
     if (this.sessionQueue.length === 0) return;
     const currentCard = this.sessionQueue[this.currentIndex];
     if (!currentCard?.hasBack) return; // Cannot flip front-only card
@@ -1567,7 +1720,7 @@ topics:
       if (nextArrowEl) {
         const canAdvanceOnLast = !this.isTestMode() && isLastCard && (this.isFlipped || !currentCard?.hasBack);
         nextArrowEl.disabled = isLastCard && !canAdvanceOnLast;
-        nextArrowEl.title = canAdvanceOnLast ? 'Завершить сессию (ArrowRight)' : 'Следующая карточка (ArrowRight)';
+        setTooltip(nextArrowEl, canAdvanceOnLast ? 'Завершить сессию (ArrowRight)' : 'Следующая карточка (ArrowRight)');
       }
 
       this.renderNavBar();
@@ -1578,6 +1731,7 @@ topics:
   }
 
   private nextCard(): void {
+    this.clearActiveTooltips();
     if (this.currentIndex < this.sessionQueue.length - 1) {
       this.pushHistoryState();
       this.currentIndex++;
@@ -1604,6 +1758,7 @@ topics:
   }
 
   private prevCard(): void {
+    this.clearActiveTooltips();
     if (this.currentIndex > 0) {
       this.pushHistoryState();
       this.currentIndex--;
@@ -1615,6 +1770,7 @@ topics:
   }
 
   private handleSRSRating(rating: SRSRating): void {
+    this.clearActiveTooltips();
     if (this.sessionQueue.length === 0) return;
 
     this.pushHistoryState();
@@ -1687,6 +1843,7 @@ topics:
   }
 
   private undoLastAction(): void {
+    this.clearActiveTooltips();
     if (this.historyStack.length === 0) {
       new Notice('Нет действий для отмены');
       return;
@@ -1710,6 +1867,7 @@ topics:
   }
 
   public shuffleQueue(): void {
+    this.clearActiveTooltips();
     if (this.sessionQueue.length <= 1) return;
 
     if (this.sessionState === 'active') {
@@ -1745,6 +1903,7 @@ topics:
   }
 
   public startTestPreset(preset: TestPreset): void {
+    this.clearActiveTooltips();
     this.selectedScope = preset.scope;
     this.selectedTags = new Set(preset.tags);
     this.selectedTagsOrder = [...preset.tags];
@@ -1757,6 +1916,7 @@ topics:
   }
 
   private async openCardInNote(card: Flashcard): Promise<void> {
+    this.clearActiveTooltips();
     const file = this.app.vault.getAbstractFileByPath(card.filePath);
     if (file instanceof TFile) {
       let leaf = this.app.workspace.getLeavesOfType('markdown')[0];
@@ -1928,7 +2088,41 @@ topics:
     }
   }
 
+  /**
+   * Clears any active Obsidian tooltips from DOM and dispatches mouseleave
+   * to hovered elements to avoid orphaned tooltips when elements are unmounted.
+   */
+  private clearActiveTooltips(): void {
+    try {
+      if (this.containerEl) {
+        try {
+          const hovered = this.containerEl.querySelectorAll(':hover');
+          hovered.forEach((el) => {
+            el.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false, cancelable: true }));
+            el.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, cancelable: true }));
+          });
+        } catch {
+          // Ignore if :hover is not supported in environment
+        }
+      }
+
+      const doc = this.containerEl?.ownerDocument || (window as any).activeDocument || document;
+      if (doc) {
+        doc.querySelectorAll('.tooltip').forEach((t: Element) => {
+          try {
+            t.remove();
+          } catch {
+            // Ignore
+          }
+        });
+      }
+    } catch {
+      // Safe fallback
+    }
+  }
+
   private cleanupCardComponent(): void {
+    this.clearActiveTooltips();
     if (this.activeCardComponent) {
       this.removeChild(this.activeCardComponent);
       this.activeCardComponent.unload();

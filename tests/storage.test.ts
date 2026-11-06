@@ -177,5 +177,71 @@ test('StorageManager manages test presets and records runs', async () => {
   assert.strictEqual(storage.getTestPresets().length, 0);
 });
 
+test('StorageManager manages card size presets and persistence', async () => {
+  let savedData: any = null;
+  const mockPlugin = {
+    loadData: async () => null,
+    saveData: async (data: any) => {
+      savedData = data;
+    },
+  } as unknown as Plugin;
+
+  const storage = new StorageManager(mockPlugin);
+  await storage.load();
+
+  // 1. Default should be 'm'
+  assert.strictEqual(storage.getCardSize('unknown-card'), 'm');
+
+  // 2. Set custom sizes
+  storage.setCardSize('card-1', 'xl');
+  storage.setCardSize('card-2', 'xs');
+  storage.setCardSize('card-3', 'full');
+
+  assert.strictEqual(storage.getCardSize('card-1'), 'xl');
+  assert.strictEqual(storage.getCardSize('card-2'), 'xs');
+  assert.strictEqual(storage.getCardSize('card-3'), 'full');
+
+  // 3. Clear size reverts to 'm'
+  storage.clearCardSize('card-2');
+  assert.strictEqual(storage.getCardSize('card-2'), 'm');
+
+  // 4. Test flush saves to data
+  await storage.flush();
+  assert.ok(savedData);
+  assert.strictEqual(savedData.cardSizes['card-1'], 'xl');
+  assert.strictEqual(savedData.cardSizes['card-2'], undefined);
+
+  // 5. Test migrateCardIds
+  const idMap = new Map([
+    ['card-1', 'card-1-renamed'],
+  ]);
+  storage.migrateCardIds(idMap);
+  assert.strictEqual(storage.getCardSize('card-1'), 'm');
+  assert.strictEqual(storage.getCardSize('card-1-renamed'), 'xl');
+
+  // 6. Test pruneOrphanedCards
+  const validIds = new Set(['card-1-renamed']);
+  storage.setCardSize('orphaned-card', 'l');
+  const pruned = storage.pruneOrphanedCards(validIds);
+  assert.ok(pruned >= 1);
+  assert.strictEqual(storage.getCardSize('orphaned-card'), 'm');
+  assert.strictEqual(storage.getCardSize('card-1-renamed'), 'xl');
+
+  // 7. Test hasCustomCardSize and fallback parameter
+  assert.strictEqual(storage.hasCustomCardSize('card-1-renamed'), true);
+  assert.strictEqual(storage.hasCustomCardSize('non-existent'), false);
+  assert.strictEqual(storage.getCardSize('non-existent', 'l'), 'l');
+
+  // 8. Test clearAllCardSizes
+  storage.setCardSize('card-a', 's');
+  storage.setCardSize('card-b', 'xl');
+  const clearedCount = storage.clearAllCardSizes();
+  assert.ok(clearedCount >= 3);
+  assert.strictEqual(storage.hasCustomCardSize('card-a'), false);
+  assert.strictEqual(storage.hasCustomCardSize('card-b'), false);
+  assert.strictEqual(storage.hasCustomCardSize('card-1-renamed'), false);
+  assert.strictEqual(storage.getCardSize('card-a', 'xl'), 'xl');
+});
+
 
 

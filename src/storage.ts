@@ -1,6 +1,8 @@
 import { Plugin } from 'obsidian';
 import {
   CardProgressRecord,
+  CardSizePreset,
+  CardSizeSetting,
   DEFAULT_SETTINGS,
   DEFAULT_STORAGE_DATA,
   Flashcard,
@@ -39,6 +41,7 @@ export class StorageManager {
         settings: Object.assign({}, DEFAULT_SETTINGS, rawData),
         progress: {},
         testPresets: {},
+        cardSizes: {},
       };
     } else {
       this.data = {
@@ -46,6 +49,7 @@ export class StorageManager {
         settings: Object.assign({}, DEFAULT_SETTINGS, rawData.settings),
         progress: rawData.progress || {},
         testPresets: rawData.testPresets || {},
+        cardSizes: rawData.cardSizes || {},
       };
     }
 
@@ -94,6 +98,59 @@ export class StorageManager {
    */
   getProgress(cardId: string): CardProgressRecord | undefined {
     return this.data.progress[cardId];
+  }
+
+  /**
+   * Retrieves the saved size preset for a card, defaulting to fallback ('m') if not set.
+   */
+  getCardSize(cardId: string, fallback: CardSizePreset = 'm'): CardSizePreset {
+    if (!this.data.cardSizes) {
+      this.data.cardSizes = {};
+    }
+    const val = this.data.cardSizes[cardId];
+    if (!val) return fallback;
+    if (typeof val === 'string') return val;
+    return val.preset || fallback;
+  }
+
+  /**
+   * Checks whether a card has a specifically saved custom size in storage.
+   */
+  hasCustomCardSize(cardId: string): boolean {
+    return Boolean(this.data.cardSizes && this.data.cardSizes[cardId]);
+  }
+
+  /**
+   * Sets the size preset for a card and schedules debounced save.
+   */
+  setCardSize(cardId: string, size: CardSizePreset): void {
+    if (!this.data.cardSizes) {
+      this.data.cardSizes = {};
+    }
+    this.data.cardSizes[cardId] = size;
+    this.scheduleSave();
+  }
+
+  /**
+   * Clears any custom size for a card (reverting to default 'm').
+   */
+  clearCardSize(cardId: string): void {
+    if (this.data.cardSizes && this.data.cardSizes[cardId]) {
+      delete this.data.cardSizes[cardId];
+      this.scheduleSave();
+    }
+  }
+
+  /**
+   * Clears all custom card sizes, reverting them to their default or file-level sizes.
+   */
+  clearAllCardSizes(): number {
+    const count = Object.keys(this.data.cardSizes || {}).length;
+    this.data.cardSizes = {};
+    if (count > 0) {
+      this.scheduleSave();
+    }
+    return count;
   }
 
   /**
@@ -283,7 +340,7 @@ export class StorageManager {
   }
 
   /**
-   * Migrates card progress records when card IDs change (e.g. on file rename).
+   * Migrates card progress records and saved sizes when card IDs change (e.g. on file rename).
    */
   migrateCardIds(idMap: Map<string, string>): void {
     let changed = false;
@@ -295,6 +352,11 @@ export class StorageManager {
         delete this.data.progress[oldId];
         changed = true;
       }
+      if (this.data.cardSizes && this.data.cardSizes[oldId] && oldId !== newId) {
+        this.data.cardSizes[newId] = this.data.cardSizes[oldId];
+        delete this.data.cardSizes[oldId];
+        changed = true;
+      }
     }
     if (changed) {
       this.scheduleSave();
@@ -302,7 +364,7 @@ export class StorageManager {
   }
 
   /**
-   * Cleans up orphaned card progress records no longer present in the vault.
+   * Cleans up orphaned card progress records and saved sizes no longer present in the vault.
    */
   pruneOrphanedCards(validCardIds: Set<string>): number {
     let prunedCount = 0;
@@ -310,6 +372,14 @@ export class StorageManager {
       if (!validCardIds.has(id)) {
         delete this.data.progress[id];
         prunedCount++;
+      }
+    }
+    if (this.data.cardSizes) {
+      for (const id of Object.keys(this.data.cardSizes)) {
+        if (!validCardIds.has(id)) {
+          delete this.data.cardSizes[id];
+          prunedCount++;
+        }
       }
     }
     if (prunedCount > 0) {

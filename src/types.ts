@@ -59,6 +59,8 @@ export interface SeeLearnSettings {
   sessionCardLimit: 'all' | number;
   linearSessionOrder: boolean;
   onboardingCompleted: boolean;
+  cardSizeProperty: string;
+  defaultCardSize: CardSizePreset;
 }
 
 export const DEFAULT_SETTINGS: SeeLearnSettings = {
@@ -81,13 +83,24 @@ export const DEFAULT_SETTINGS: SeeLearnSettings = {
   sessionCardLimit: 'all',
   linearSessionOrder: false,
   onboardingCompleted: false,
+  cardSizeProperty: 'card_size',
+  defaultCardSize: 'm',
 };
+
+export type CardSizePreset = 'xs' | 's' | 'm' | 'l' | 'xl' | 'full';
+
+export interface CardSizeSetting {
+  preset: CardSizePreset;
+  customWidth?: number;
+  customHeight?: number;
+}
 
 export interface SeeLearnStorageData {
   version: number;
   settings: SeeLearnSettings;
   progress: Record<string, CardProgressRecord>;
   testPresets?: Record<string, TestPreset>;
+  cardSizes?: Record<string, CardSizePreset | CardSizeSetting>;
 }
 
 export const DEFAULT_STORAGE_DATA: SeeLearnStorageData = {
@@ -95,6 +108,7 @@ export const DEFAULT_STORAGE_DATA: SeeLearnStorageData = {
   settings: DEFAULT_SETTINGS,
   progress: {},
   testPresets: {},
+  cardSizes: {},
 };
 
 export interface Flashcard {
@@ -112,6 +126,8 @@ export interface Flashcard {
   tags: string[];
   globalTopics: string[];
   localTags: string[];
+  cardSize?: CardSizePreset;
+  fileCardSize?: CardSizePreset;
 }
 
 export interface ValidationWarning {
