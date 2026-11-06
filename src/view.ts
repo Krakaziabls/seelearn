@@ -1422,17 +1422,18 @@ topics:
     // 2. Center group: navigation and rating buttons (populated in active session)
     const centerNav = this.navBarEl.createDiv({ cls: 'seelearn-nav-group center' });
 
-    // 3. Right group: exit button in Learn mode, symmetrical spacer in Test mode
+    // 3. Right group: exit button in active session (both Learn and Test modes)
     const rightNav = this.navBarEl.createDiv({ cls: 'seelearn-nav-group right' });
 
-    if (this.sessionState === 'active' && !this.isTestMode()) {
+    if (this.sessionState === 'active') {
       const exitBtn = rightNav.createEl('button', {
         cls: 'clickable-icon seelearn-btn-icon seelearn-nav-exit-btn',
         title: 'Завершить сессию и перейти к итогам',
       });
       setIcon(exitBtn, 'log-out');
       setTooltip(exitBtn, 'Завершить сессию и перейти к итогам');
-      exitBtn.addEventListener('click', () => {
+      exitBtn.addEventListener('click', async () => {
+        await this.plugin.storage.saveNow();
         this.sessionState = 'finished';
         this.renderAll();
       });

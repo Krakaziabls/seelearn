@@ -18,13 +18,18 @@ In Learn mode («Ботать»), during an active session the bottom navigation
 - **WHEN** the user clicks `.seelearn-nav-exit-btn`
 - **THEN** `sessionState` transitions to `'finished'`, session statistics reflect the 3 reviewed cards, streak data is preserved, and the summary screen displays the results
 
-### Requirement: Strict Test Mode Exit Prohibition
-In Test mode («Проверка знаний» / `.is-test`), the exit button in `.seelearn-nav-bar` MUST NOT be rendered during an active session, ensuring strict test integrity and preventing accidental early termination.
+### Requirement: Test Mode In-Session Exit Support
+In Test mode («Проверка знаний» / `.is-test`), during an active session the bottom navigation bar (`.seelearn-nav-bar`) MUST also render the exit button (`.seelearn-nav-exit-btn`) in `.seelearn-nav-group.right`. When clicked, all cards reviewed and evaluated so far MUST have their SRS progress immediately persisted to storage without data loss, and the view transitions to the summary screen.
 
-#### Scenario: No exit button in Test mode
+#### Scenario: Exit button visibility in Test mode
 - **GIVEN** a study session in Test mode («Проверка знаний») is active
 - **WHEN** `.seelearn-nav-bar` is rendered
-- **THEN** `.seelearn-nav-group.right` does NOT contain `.seelearn-nav-exit-btn` and contains no interactive exit controls
+- **THEN** `.seelearn-nav-group.right` contains `.seelearn-nav-exit-btn` with icon `log-out`
+
+#### Scenario: Early exit in Test mode preserves progress
+- **GIVEN** an active Test session where the user has rated 4 cards and is viewing the 5th card without rating it
+- **WHEN** the user clicks `.seelearn-nav-exit-btn`
+- **THEN** `sessionState` transitions to `'finished'`, storage immediately persists the 4 rated reviews, session statistics reflect the 4 reviewed cards, and unrated cards remain untouched
 
 ### Requirement: Per-Session Card Limits (N or All)
 The user MUST be able to specify a maximum card limit $N$ (or choose «Все») for each study session in `.seelearn-lobby-box`. The chosen limit MUST constrain the session queue for regular study and for launching Test Presets.
