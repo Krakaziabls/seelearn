@@ -16,7 +16,7 @@ import type SeeLearnPlugin from './main';
 import { CardProgressRecord, CardSizePreset, Flashcard, SRSQueueFilter, TestPreset, ValidationWarning } from './types';
 import { fisherYatesShuffle, interleaveCards } from './shuffle';
 import { prepareSessionPool } from './session';
-import { getSRSIntervalPreviews, isCardDue, isCardLeech, isCardNew, SRSRating } from './srs';
+import { getSRSIntervalPreviews, isCardDue, isCardLeech, isCardNew, SRSRating, ScheduleContext } from './srs';
 import { OnboardingManager } from './onboarding';
 
 export const VIEW_TYPE_SEELEARN = 'seelearn-study-view';
@@ -75,6 +75,9 @@ export class StudyView extends ItemView {
 
   // Undo history stack
   private historyStack: HistoryEntry[] = [];
+
+  // Live session calendar load for load-aware SRS balancing
+  private sessionDueCountsByDay: Record<number, number> = {};
 
   // DOM Elements
   private toolbarEl!: HTMLElement;
@@ -206,10 +209,52 @@ export class StudyView extends ItemView {
   }
 
   /**
+   * Initializes session calendar load map (day offset from today -> count)
+   * from current progress in storage for load-aware SRS scheduling.
+   */
+  private initSessionDueCounts(): void {
+    const map: Record<number, number> = {};
+    const today = new Date();
+    const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const progress = this.plugin.storage.data.progress || {};
+
+    for (const cardId in progress) {
+      const record = progress[cardId];
+      if (record && record.dueDate) {
+        const parts = record.dueDate.split('-');
+        if (parts.length === 3) {
+          const y = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10);
+          const d = parseInt(parts[2], 10);
+          if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+            const dueTime = new Date(y, m - 1, d).getTime();
+            const diffDays = Math.round((dueTime - todayZero) / (1000 * 60 * 60 * 24));
+            if (diffDays >= 0) {
+              map[diffDays] = (map[diffDays] ?? 0) + 1;
+            }
+          }
+        }
+      }
+    }
+    this.sessionDueCountsByDay = map;
+  }
+
+  /**
+   * Returns transient schedule context with live calendar load and card seed.
+   */
+  private getScheduleContext(cardId?: string): ScheduleContext {
+    return {
+      dueCountsByDay: this.sessionDueCountsByDay,
+      seed: cardId,
+    };
+  }
+
+  /**
    * Begins an active learning or testing session with a frozen queue snapshot.
    */
   public startSession(): void {
     this.clearActiveTooltips();
+    this.initSessionDueCounts();
     let filtered = this.getFilteredCards();
     if (filtered.length === 0) {
       new Notice('Нет доступных карточек для начала сессии');
@@ -1459,6 +1504,7 @@ export class StudyView extends ItemView {
           easyCount: 0,
           failedCards: [],
         };
+        this.initSessionDueCounts();
         this.renderAll();
       });
     }
@@ -1626,7 +1672,8 @@ topics:
       } else {
         // Back of two-sided card: 4 SRS Rating Buttons with predicted intervals
         const record = currentCard ? this.plugin.storage.getProgress(currentCard.id) : undefined;
-        const previews = getSRSIntervalPreviews(record);
+        const schedCtx = currentCard ? this.getScheduleContext(currentCard.id) : undefined;
+        const previews = getSRSIntervalPreviews(record, new Date(), schedCtx);
 
         // [1] Снова
         const againBtn = centerNav.createEl('button', {
@@ -1793,7 +1840,13 @@ topics:
 
     this.pushHistoryState();
     const card = this.sessionQueue[this.currentIndex];
-    const result = this.plugin.storage.recordReview(card.id, rating);
+    const schedCtx = this.getScheduleContext(card.id);
+    const result = this.plugin.storage.recordReview(card.id, rating, schedCtx);
+
+    if (result.interval > 0) {
+      this.sessionDueCountsByDay[result.interval] =
+        (this.sessionDueCountsByDay[result.interval] ?? 0) + 1;
+    }
 
     this.sessionStats.totalReviewed++;
     if (rating === 'again') {
@@ -1922,6 +1975,7 @@ topics:
       easyCount: 0,
       failedCards: [],
     };
+    this.initSessionDueCounts();
     new Notice('Сессия перезапущена в прежнем составе');
     this.renderAll();
   }

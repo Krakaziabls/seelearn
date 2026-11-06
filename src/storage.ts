@@ -12,7 +12,7 @@ import {
   StudyStreakStats,
   TestPreset,
 } from './types';
-import { calculateSRSReview, isCardDue, isCardNew, SRSRating } from './srs';
+import { calculateSRSReview, isCardDue, isCardNew, SRSRating, ScheduleContext } from './srs';
 
 export class StorageManager {
   private plugin: Plugin;
@@ -156,7 +156,11 @@ export class StorageManager {
   /**
    * Records a review using the SM-2 algorithm, updating intervals, repetitions, and history.
    */
-  recordReview(cardId: string, rating: SRSRatingValue): CardProgressRecord {
+  recordReview(
+    cardId: string,
+    rating: SRSRatingValue,
+    scheduleContext?: ScheduleContext
+  ): CardProgressRecord {
     let srsRating: SRSRating = 'good';
     if (rating === 'again' || rating === 'repeat' || rating === 1) {
       srsRating = 'again';
@@ -169,7 +173,11 @@ export class StorageManager {
     }
 
     const currentRecord = this.data.progress[cardId];
-    const result = calculateSRSReview(currentRecord, srsRating);
+    const ctx: ScheduleContext = {
+      seed: cardId,
+      ...scheduleContext,
+    };
+    const result = calculateSRSReview(currentRecord, srsRating, new Date(), ctx);
 
     const record: CardProgressRecord = currentRecord
       ? currentRecord

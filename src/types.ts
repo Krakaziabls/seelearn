@@ -19,6 +19,11 @@ export interface CardProgressRecord {
   history?: CardReviewEntry[];
 }
 
+export interface ScheduleContext {
+  dueCountsByDay?: Record<number, number>; // day offset from today -> count of cards scheduled
+  seed?: string | number; // cardId or salt for deterministic tie-breaking
+}
+
 export interface StudyStreakStats {
   currentStreak: number;
   bestStreak: number;
