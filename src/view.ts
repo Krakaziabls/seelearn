@@ -1570,8 +1570,30 @@ topics:
     });
     setIcon(helpBtn, 'help-circle');
     setTooltip(helpBtn, 'Шпаргалка и справка');
-    helpBtn.addEventListener('click', async () => {
-      await OnboardingManager.openCheatsheetNote(this.app);
+    helpBtn.addEventListener('click', async (evt: MouseEvent) => {
+      const menu = new Menu();
+      menu.addItem((item) => {
+        item
+          .setTitle('Синтаксис и создание карточек')
+          .setIcon('file-text')
+          .onClick(async () => {
+            await OnboardingManager.openCheatsheetNote(this.app, 'syntax');
+          });
+      });
+      menu.addItem((item) => {
+        item
+          .setTitle('Методология и обучение')
+          .setIcon('brain')
+          .onClick(async () => {
+            await OnboardingManager.openCheatsheetNote(this.app, 'methodology');
+          });
+      });
+      if (evt && typeof evt.clientX === 'number' && evt.clientX > 0) {
+        menu.showAtMouseEvent(evt);
+      } else {
+        const rect = helpBtn.getBoundingClientRect();
+        menu.showAtPosition({ x: rect.left, y: rect.bottom });
+      }
     });
 
     // Shuffle button

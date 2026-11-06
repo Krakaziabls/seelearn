@@ -4,29 +4,32 @@ import { OnboardingManager } from '../src/onboarding';
 import { parseCardsFromMarkdown } from '../src/parser';
 import type { App, TFile } from 'obsidian';
 
-test('Onboarding: cheatsheet template does not include #seelearn trigger tag', () => {
-  const cheatsheet = OnboardingManager.getCheatsheetMarkdownContent();
-
-  // The tag #seelearn must not appear as an active tag in frontmatter or plain text
-  // (Only allowed inside code blocks showing example syntax)
-  const lines = cheatsheet.split('\n');
-  let inCodeBlock = false;
-  for (const line of lines) {
-    if (line.trim().startsWith('```')) {
-      inCodeBlock = !inCodeBlock;
-      continue;
-    }
-    if (!inCodeBlock) {
-      assert.ok(
-        !line.includes('#seelearn'),
-        `Cheatsheet should not contain #seelearn outside code blocks: "${line}"`
-      );
+test('Onboarding: cheatsheet templates do not include #seelearn trigger tag outside code blocks', () => {
+  for (const cheatsheet of [
+    OnboardingManager.getSyntaxCheatsheetContent(),
+    OnboardingManager.getMethodologyCheatsheetContent(),
+  ]) {
+    // The tag #seelearn must not appear as an active tag in frontmatter or plain text
+    // (Only allowed inside code blocks showing example syntax)
+    const lines = cheatsheet.split('\n');
+    let inCodeBlock = false;
+    for (const line of lines) {
+      if (line.trim().startsWith('```')) {
+        inCodeBlock = !inCodeBlock;
+        continue;
+      }
+      if (!inCodeBlock) {
+        assert.ok(
+          !line.includes('#seelearn'),
+          `Cheatsheet should not contain #seelearn outside code blocks: "${line}"`
+        );
+      }
     }
   }
 });
 
-test('Onboarding: cheatsheet template covers all required syntax and SM-2 methodology', () => {
-  const content = OnboardingManager.getCheatsheetMarkdownContent();
+test('Onboarding: syntax cheatsheet covers all required card types and controls', () => {
+  const content = OnboardingManager.getSyntaxCheatsheetContent();
 
   // Syntax requirements
   assert.ok(content.includes('@front'), 'Must document @front');
@@ -35,6 +38,12 @@ test('Onboarding: cheatsheet template covers all required syntax and SM-2 method
   assert.ok(content.includes('{{c1::'), 'Must document Cloze syntax');
   assert.ok(content.includes('=='), 'Must document highlight syntax');
   assert.ok(content.includes('%%%%'), 'Must document privacy %%%% syntax');
+  assert.ok(content.includes('card_size'), 'Must document card_size property');
+  assert.ok(content.includes('Пробел'), 'Must document hotkeys');
+});
+
+test('Onboarding: methodology cheatsheet covers all required learning concepts', () => {
+  const content = OnboardingManager.getMethodologyCheatsheetContent();
 
   // SM-2 methodology requirements
   assert.ok(content.includes('SM-2'), 'Must mention SM-2');
@@ -45,6 +54,7 @@ test('Onboarding: cheatsheet template covers all required syntax and SM-2 method
   assert.ok(content.includes('[3] Хорошо'), 'Must explain Good rating');
   assert.ok(content.includes('[4] Легко'), 'Must explain Easy rating');
   assert.ok(content.includes('Пиявка') || content.includes('Пиявки') || content.includes('Leech'), 'Must explain Leeches');
+  assert.ok(content.includes('Ботать') && content.includes('Проверка знаний'), 'Must explain both study modes');
 });
 
 test('Onboarding: Demo Note 1 (Basic & Scroll) contains valid parseable cards', () => {
@@ -232,47 +242,52 @@ test('Onboarding: ensureOnboardingAssets creates missing assets and handles recr
   // First run: files do not exist
   const cheatsheet = await OnboardingManager.ensureOnboardingAssets(mockApp);
   assert.ok(cheatsheet, 'Should return created cheatsheet');
-  assert.equal(cheatsheet.path, OnboardingManager.CHEATSHEET_FILE);
+  assert.equal(cheatsheet.path, OnboardingManager.CHEATSHEET_SYNTAX_FILE);
   assert.ok(mockFolders.has(OnboardingManager.EXAMPLES_DIR), 'Folder should be created');
-  assert.ok(mockVaultFiles.has(OnboardingManager.CHEATSHEET_FILE), 'Cheatsheet should be created');
+  assert.ok(mockVaultFiles.has(OnboardingManager.CHEATSHEET_SYNTAX_FILE), 'Syntax cheatsheet should be created');
+  assert.ok(mockVaultFiles.has(OnboardingManager.CHEATSHEET_METHODOLOGY_FILE), 'Methodology cheatsheet should be created');
   assert.ok(mockVaultFiles.has(OnboardingManager.DEMO_NOTE_1), 'Demo 1 should be created');
   assert.ok(mockVaultFiles.has(OnboardingManager.DEMO_NOTE_2), 'Demo 2 should be created');
   assert.ok(mockVaultFiles.has(OnboardingManager.DEMO_NOTE_3), 'Demo 3 should be created');
   assert.ok(mockVaultFiles.has(OnboardingManager.DEMO_NOTE_4), 'Demo 4 should be created');
   assert.ok(mockVaultFiles.has(OnboardingManager.DEMO_NOTE_5), 'Demo 5 should be created');
 
-  // Verify legacy file was cleaned up
+  // Verify legacy single cheatsheet file was cleaned up
+  assert.ok(!mockVaultFiles.has(OnboardingManager.LEGACY_CHEATSHEET_FILE), 'Legacy cheatsheet should be cleaned up');
   assert.ok(!mockVaultFiles.has('SeeLearn Examples/Пример — Биология клетки.md'), 'Legacy demo note should be cleaned up');
 
-  // Second run: delete cheatsheet and ensure it recreates
-  mockVaultFiles.delete(OnboardingManager.CHEATSHEET_FILE);
+  // Second run: delete syntax cheatsheet and ensure it recreates
+  mockVaultFiles.delete(OnboardingManager.CHEATSHEET_SYNTAX_FILE);
   const recreated = await OnboardingManager.ensureOnboardingAssets(mockApp);
   assert.ok(recreated, 'Should recreate cheatsheet');
-  assert.ok(mockVaultFiles.has(OnboardingManager.CHEATSHEET_FILE), 'Cheatsheet should exist again');
+  assert.ok(mockVaultFiles.has(OnboardingManager.CHEATSHEET_SYNTAX_FILE), 'Syntax cheatsheet should exist again');
 });
 
-test('Onboarding: openCheatsheetNote focuses existing leaf or opens a new tab', async () => {
+test('Onboarding: openCheatsheetNote focuses existing leaf or opens a new tab for syntax and methodology', async () => {
   const mockVaultFiles = new Map<string, { path: string; extension: string }>();
   const mockFolders = new Set<string>([OnboardingManager.EXAMPLES_DIR]);
-  const cheatsheetObj = { path: OnboardingManager.CHEATSHEET_FILE, extension: 'md' };
-  mockVaultFiles.set(OnboardingManager.CHEATSHEET_FILE, cheatsheetObj);
+  const syntaxObj = { path: OnboardingManager.CHEATSHEET_SYNTAX_FILE, extension: 'md' };
+  const methodologyObj = { path: OnboardingManager.CHEATSHEET_METHODOLOGY_FILE, extension: 'md' };
+  mockVaultFiles.set(OnboardingManager.CHEATSHEET_SYNTAX_FILE, syntaxObj);
+  mockVaultFiles.set(OnboardingManager.CHEATSHEET_METHODOLOGY_FILE, methodologyObj);
 
   let activeLeafCalledWith: any = null;
   let newLeafOpenedWith: any = null;
 
-  // Scenario A: Leaf already open
-  const openLeafMock = {
-    view: { file: { path: OnboardingManager.CHEATSHEET_FILE } },
+  // Scenario A: Syntax leaf already open
+  const openSyntaxMock = {
+    view: { file: { path: OnboardingManager.CHEATSHEET_SYNTAX_FILE } },
   };
 
   const mockAppA = {
     vault: {
       getAbstractFileByPath: (p: string) => mockVaultFiles.get(p) || null,
       createFolder: async () => {},
-      create: async () => cheatsheetObj,
+      create: async () => syntaxObj,
+      modify: async () => {},
     },
     workspace: {
-      getLeavesOfType: (type: string) => (type === 'markdown' ? [openLeafMock] : []),
+      getLeavesOfType: (type: string) => (type === 'markdown' ? [openSyntaxMock] : []),
       setActiveLeaf: (leaf: any) => {
         activeLeafCalledWith = leaf;
       },
@@ -282,15 +297,16 @@ test('Onboarding: openCheatsheetNote focuses existing leaf or opens a new tab', 
     },
   } as unknown as App;
 
-  await OnboardingManager.openCheatsheetNote(mockAppA);
-  assert.strictEqual(activeLeafCalledWith, openLeafMock, 'Existing leaf should be focused');
+  await OnboardingManager.openCheatsheetNote(mockAppA, 'syntax');
+  assert.strictEqual(activeLeafCalledWith, openSyntaxMock, 'Existing syntax leaf should be focused');
 
-  // Scenario B: Leaf not open
+  // Scenario B: Methodology leaf not open -> opens new tab
   const mockAppB = {
     vault: {
       getAbstractFileByPath: (p: string) => mockVaultFiles.get(p) || null,
       createFolder: async () => {},
-      create: async () => cheatsheetObj,
+      create: async () => methodologyObj,
+      modify: async () => {},
     },
     workspace: {
       getLeavesOfType: () => [],
@@ -308,6 +324,10 @@ test('Onboarding: openCheatsheetNote focuses existing leaf or opens a new tab', 
     },
   } as unknown as App;
 
-  await OnboardingManager.openCheatsheetNote(mockAppB);
-  assert.strictEqual(newLeafOpenedWith?.path, OnboardingManager.CHEATSHEET_FILE, 'New tab must open cheatsheet file');
+  await OnboardingManager.openCheatsheetNote(mockAppB, 'methodology');
+  assert.strictEqual(
+    newLeafOpenedWith?.path,
+    OnboardingManager.CHEATSHEET_METHODOLOGY_FILE,
+    'New tab must open methodology cheatsheet file'
+  );
 });

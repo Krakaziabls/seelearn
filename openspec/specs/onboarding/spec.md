@@ -23,10 +23,10 @@ The plugin must generate an isolated folder named \`SeeLearn Examples\` containi
 
 #### Scenario: Generating SeeLearn Examples structure
 - **WHEN** the onboarding flow executes
-- **THEN** the folder \`SeeLearn Examples\` is created in vault root if it does not already exist
-- **AND** \`Шпаргалка SeeLearn — Синтаксис и Методология.md\` is generated without \`#seelearn\` trigger tag
+- **THEN** the folder `SeeLearn Examples` is created in vault root if it does not already exist
+- **AND** `Шпаргалка SeeLearn — Синтаксис.md` and `Шпаргалка SeeLearn — Методология.md` are generated without `#seelearn` trigger tag outside code blocks
 - **AND** five comprehensive demonstration notes covering all capabilities (basic two-sided cards, reversed order, explicit IDs, all cloze deletion variants, highlights, code blocks with syntax highlighting, LaTeX math formulas, privacy comment fences %%%%, and long scrollable content) are generated across distinct topic domains.
 
 #### Scenario: Opening cheatsheet tab
 - **WHEN** the demo assets have been created during first run
-- **THEN** \`Шпаргалка SeeLearn — Синтаксис и Методология.md\` is automatically opened in a new workspace leaf (\`tab\`).
+- **THEN** `Шпаргалка SeeLearn — Синтаксис.md` is automatically opened in a new workspace leaf (`tab`).
