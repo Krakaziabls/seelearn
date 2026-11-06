@@ -21,6 +21,15 @@ import { OnboardingManager } from './onboarding';
 
 export const VIEW_TYPE_SEELEARN = 'seelearn-study-view';
 
+function formatFlipsCount(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod100 >= 11 && mod100 <= 19) return `${count} флипов`;
+  if (mod10 === 1) return `${count} флип`;
+  if (mod10 >= 2 && mod10 <= 4) return `${count} флипа`;
+  return `${count} флипов`;
+}
+
 interface HistoryEntry {
   cardId: string;
   queueSnapshot: Flashcard[];
@@ -936,12 +945,15 @@ export class StudyView extends ItemView {
         this.activeCardComponent
       );
 
+      const isLastCard = this.currentIndex >= this.sessionQueue.length - 1;
       const promptEl = cardBody.createDiv({ cls: 'seelearn-flip-prompt' });
       promptEl.createSpan({
         text: !this.isFlipped
           ? 'Нажмите Пробел или карточку, чтобы посмотреть ответ'
           : this.isTestMode()
           ? 'Оцените сложность (клавиши 1-4)'
+          : isLastCard
+          ? 'Ответ показан (Space — завершить сессию)'
           : 'Ответ показан (Space — далее)',
       });
 
@@ -955,12 +967,15 @@ export class StudyView extends ItemView {
     }
 
     // Side navigation arrow: Next
+    const isLastCard = this.currentIndex >= this.sessionQueue.length - 1;
+    const canAdvanceOnLast = !this.isTestMode() && isLastCard && (this.isFlipped || !card.hasBack);
+
     const nextArrow = cardWrapper.createEl('button', {
       cls: 'seelearn-side-arrow next',
-      title: 'Следующая карточка (ArrowRight)',
+      title: canAdvanceOnLast ? 'Завершить сессию (ArrowRight)' : 'Следующая карточка (ArrowRight)',
     });
     setIcon(nextArrow, 'chevron-right');
-    nextArrow.disabled = this.currentIndex >= this.sessionQueue.length - 1;
+    nextArrow.disabled = isLastCard && !canAdvanceOnLast;
     nextArrow.addEventListener('click', (e) => {
       e.stopPropagation();
       this.nextCard();
@@ -1053,11 +1068,11 @@ export class StudyView extends ItemView {
     const streakBanner = lobbyBox.createDiv({ cls: 'seelearn-streak-banner' });
     const pill1 = streakBanner.createDiv({ cls: 'seelearn-streak-pill' });
     setIcon(pill1.createSpan({ cls: 'seelearn-icon-inline' }), 'flame');
-    pill1.createSpan({ text: ` Стрик: ${streakStats.currentStreak} дн.` });
+    pill1.createSpan({ text: `Стрик: ${streakStats.currentStreak} дн.` });
 
     const pill2 = streakBanner.createDiv({ cls: 'seelearn-streak-pill' });
     setIcon(pill2.createSpan({ cls: 'seelearn-icon-inline' }), 'trophy');
-    pill2.createSpan({ text: ` Рекорд: ${streakStats.bestStreak} дн.` });
+    pill2.createSpan({ text: `Рекорд: ${streakStats.bestStreak} дн.` });
 
     // Primary action button & test saving
     const actionsRow = lobbyBox.createDiv({ cls: 'seelearn-lobby-actions' });
@@ -1200,15 +1215,15 @@ export class StudyView extends ItemView {
     const streakBanner = emptyBox.createDiv({ cls: 'seelearn-streak-banner' });
     const pill1 = streakBanner.createDiv({ cls: 'seelearn-streak-pill' });
     setIcon(pill1.createSpan({ cls: 'seelearn-icon-inline' }), 'flame');
-    pill1.createSpan({ text: ` Стрик: ${streakStats.currentStreak} дн.` });
+    pill1.createSpan({ text: `Стрик: ${streakStats.currentStreak} дн.` });
 
     const pill2 = streakBanner.createDiv({ cls: 'seelearn-streak-pill' });
     setIcon(pill2.createSpan({ cls: 'seelearn-icon-inline' }), 'trophy');
-    pill2.createSpan({ text: ` Рекорд: ${streakStats.bestStreak} дн.` });
+    pill2.createSpan({ text: `Рекорд: ${streakStats.bestStreak} дн.` });
 
     const pill3 = streakBanner.createDiv({ cls: 'seelearn-streak-pill' });
     setIcon(pill3.createSpan({ cls: 'seelearn-icon-inline' }), 'layers');
-    pill3.createSpan({ text: ` Всего: ${streakStats.totalReviews} повторений` });
+    pill3.createSpan({ text: `Всего: ${formatFlipsCount(streakStats.totalReviews)}` });
 
     // 35-Day (5-week) Activity Heatmap
     const heatmapContainer = emptyBox.createDiv({ cls: 'seelearn-heatmap-wrap' });
@@ -1408,13 +1423,24 @@ topics:
     if (!this.isTestMode()) {
       // LEARN MODE (Режим "Ботать" по умолчанию)
       if (currentCard?.hasBack) {
-        const flipText = !this.isFlipped ? 'Показать ответ (Space)' : 'Скрыть ответ (Space)';
+        const isLastCard = this.currentIndex === this.sessionQueue.length - 1;
+        const flipText = !this.isFlipped
+          ? 'Показать ответ (Space)'
+          : isLastCard
+          ? 'Завершить сессию (Space)'
+          : 'Скрыть ответ (Space)';
         const flipBtn = centerNav.createEl('button', {
           cls: 'seelearn-nav-btn mod-cta',
           text: flipText,
-          title: 'Перевернуть карточку (Space)',
+          title: isLastCard && this.isFlipped ? 'Завершить сессию (Space)' : 'Перевернуть карточку (Space)',
         });
-        flipBtn.addEventListener('click', () => this.flipCard());
+        flipBtn.addEventListener('click', () => {
+          if (isLastCard && this.isFlipped) {
+            this.nextCard();
+          } else {
+            this.flipCard();
+          }
+        });
       }
     } else {
       // TEST MODE (Режим "Проверить знания" с SM-2)
@@ -1496,11 +1522,7 @@ topics:
       if (this.isTestMode()) {
         this.handleSRSRating('good');
       } else {
-        if (this.currentIndex < this.sessionQueue.length - 1) {
-          this.nextCard();
-        } else {
-          this.flipCard();
-        }
+        this.nextCard();
       }
     }
   }
@@ -1518,6 +1540,7 @@ topics:
     const promptEl = this.cardAreaEl.querySelector<HTMLElement>('.seelearn-flip-prompt');
 
     if (cardContainer && answerSection && frontEl) {
+      const isLastCard = this.currentIndex >= this.sessionQueue.length - 1;
       if (this.isFlipped) {
         cardContainer.addClass('is-flipped');
         answerSection.style.display = 'block';
@@ -1528,7 +1551,11 @@ topics:
         }
         if (promptEl) {
           promptEl.setText(
-            this.isTestMode() ? 'Оцените сложность (клавиши 1-4)' : 'Ответ показан (Space — далее)'
+            this.isTestMode()
+              ? 'Оцените сложность (клавиши 1-4)'
+              : isLastCard
+              ? 'Ответ показан (Space — завершить сессию)'
+              : 'Ответ показан (Space — далее)'
           );
         }
       } else {
@@ -1540,6 +1567,15 @@ topics:
           promptEl.setText('Нажмите Пробел или карточку, чтобы посмотреть ответ');
         }
       }
+
+      // Update next side arrow state reactively
+      const nextArrowEl = this.cardAreaEl.querySelector<HTMLButtonElement>('.seelearn-side-arrow.next');
+      if (nextArrowEl) {
+        const canAdvanceOnLast = !this.isTestMode() && isLastCard && (this.isFlipped || !currentCard?.hasBack);
+        nextArrowEl.disabled = isLastCard && !canAdvanceOnLast;
+        nextArrowEl.title = canAdvanceOnLast ? 'Завершить сессию (ArrowRight)' : 'Следующая карточка (ArrowRight)';
+      }
+
       this.renderNavBar();
     } else {
       this.renderCardArea();
@@ -1557,6 +1593,14 @@ topics:
       this.renderCardArea();
       this.renderNavBar();
     } else if (this.currentIndex === this.sessionQueue.length - 1) {
+      // In Learn mode: if the user hasn't viewed the answer yet, flip first
+      if (!this.isTestMode()) {
+        const currentCard = this.sessionQueue[this.currentIndex];
+        if (currentCard?.hasBack && !this.isFlipped) {
+          this.flipCard();
+          return;
+        }
+      }
       // Finished all cards
       this.sessionStats.totalReviewed++;
       this.sessionState = 'finished';

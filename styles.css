@@ -1262,6 +1262,24 @@ button.seelearn-nav-help-btn:hover {
   border: 1px solid var(--background-modifier-border);
   color: var(--text-normal);
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  line-height: 1;
+}
+
+.seelearn-streak-pill .seelearn-icon-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.seelearn-streak-pill .seelearn-icon-inline svg {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
 
