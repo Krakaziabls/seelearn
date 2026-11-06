@@ -1074,7 +1074,7 @@ export class StudyView extends ItemView {
 
     const totalCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
     totalCard.createDiv({ cls: 'seelearn-stat-val', text: `${matchingCards.length}` });
-    totalCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'Всего в очереди' });
+    totalCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'Пул карт' });
 
     const currentLimit = this.plugin.settings.sessionCardLimit ?? 'all';
     const sessionCount =
