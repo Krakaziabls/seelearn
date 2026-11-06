@@ -447,7 +447,45 @@ export class StudyView extends ItemView {
       this.resetSession();
     });
 
-    // 3. Tags Bar Toggle Button (visible only in lobby when tags are available)
+    // 3. Card Limit Dropdown (Session Limit: All / 10 / 20 / 50 / 100, visible in lobby)
+    if (this.sessionState === 'lobby') {
+      const limitSelect = leftGroup.createEl('select', {
+        cls: 'dropdown seelearn-limit-select',
+        title: 'Лимит карточек на сессию',
+      });
+
+      const limitOptions: Array<{ label: string; value: 'all' | number }> = [
+        { label: 'Лимит: Все', value: 'all' },
+        { label: 'Лимит: 10 карт', value: 10 },
+        { label: 'Лимит: 20 карт', value: 20 },
+        { label: 'Лимит: 50 карт', value: 50 },
+        { label: 'Лимит: 100 карт', value: 100 },
+      ];
+
+      const currentLimit = this.plugin.settings.sessionCardLimit ?? 'all';
+      if (typeof currentLimit === 'number' && !limitOptions.some((o) => o.value === currentLimit)) {
+        limitOptions.push({ label: `Лимит: ${currentLimit} карт`, value: currentLimit });
+      }
+
+      for (const opt of limitOptions) {
+        const optionEl = limitSelect.createEl('option', {
+          value: String(opt.value),
+          text: opt.label,
+        });
+        if (currentLimit === opt.value) {
+          optionEl.selected = true;
+        }
+      }
+
+      limitSelect.addEventListener('change', async () => {
+        const val = limitSelect.value === 'all' ? 'all' : parseInt(limitSelect.value, 10);
+        this.plugin.settings.sessionCardLimit = val;
+        await this.plugin.saveSettings();
+        this.renderAll();
+      });
+    }
+
+    // 4. Tags Bar Toggle Button (visible only in lobby when tags are available)
     if (this.sessionState === 'lobby') {
       const availableTags = this.getAllAvailableTags();
       if (availableTags.length > 0) {
@@ -981,7 +1019,13 @@ export class StudyView extends ItemView {
     totalCard.createDiv({ cls: 'seelearn-stat-val', text: `${matchingCards.length}` });
     totalCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'Всего в очереди' });
 
-    const estMinutes = Math.max(1, Math.ceil(matchingCards.length * 0.4));
+    const currentLimit = this.plugin.settings.sessionCardLimit ?? 'all';
+    const sessionCount =
+      typeof currentLimit === 'number' && currentLimit < matchingCards.length
+        ? currentLimit
+        : matchingCards.length;
+
+    const estMinutes = Math.max(1, Math.ceil(sessionCount * 0.4));
     const timeCard = statsGrid.createDiv({ cls: 'seelearn-stat-card' });
     timeCard.createDiv({ cls: 'seelearn-stat-val', text: `~${estMinutes} мин` });
     timeCard.createDiv({ cls: 'seelearn-stat-lbl', text: 'Расчетное время' });
@@ -997,46 +1041,22 @@ export class StudyView extends ItemView {
     setIcon(pill2.createSpan({ cls: 'seelearn-icon-inline' }), 'trophy');
     pill2.createSpan({ text: ` Рекорд: ${streakStats.bestStreak} дн.` });
 
-    // Limit selector row: [ 10 | 20 | 50 | 100 | Все ]
-    const limitRow = lobbyBox.createDiv({ cls: 'seelearn-limit-row' });
-    limitRow.createSpan({ cls: 'seelearn-limit-lbl', text: 'Лимит карточек на сессию:' });
-    const limitPills = limitRow.createDiv({ cls: 'seelearn-limit-pills' });
-
-    const limitOptions: Array<{ label: string; value: 'all' | number }> = [
-      { label: '10', value: 10 },
-      { label: '20', value: 20 },
-      { label: '50', value: 50 },
-      { label: '100', value: 100 },
-      { label: 'Все', value: 'all' },
-    ];
-
-    const currentLimit = this.plugin.settings.sessionCardLimit ?? 'all';
-
-    for (const opt of limitOptions) {
-      const isSelected = currentLimit === opt.value;
-      const pill = limitPills.createEl('button', {
-        cls: `seelearn-limit-pill ${isSelected ? 'is-active' : ''}`,
-        text: opt.label,
-        title:
-          opt.value === 'all'
-            ? 'Пройти все доступные карточки'
-            : `Ограничить сессию ${opt.value} карточками`,
-      });
-      pill.addEventListener('click', async () => {
-        this.plugin.settings.sessionCardLimit = opt.value;
-        await this.plugin.saveSettings();
-        this.renderAll();
-      });
-    }
-
     // Primary action button & test saving
     const actionsRow = lobbyBox.createDiv({ cls: 'seelearn-lobby-actions' });
     const startBtn = actionsRow.createEl('button', {
       cls: 'seelearn-start-session-btn mod-cta',
     });
     setIcon(startBtn.createSpan({ cls: 'seelearn-icon-inline' }), 'play');
+
+    const limitSuffix =
+      typeof currentLimit === 'number' && currentLimit < matchingCards.length
+        ? ` (${currentLimit} карт)`
+        : ` (все ${matchingCards.length})`;
+
     startBtn.createSpan({
-      text: this.isTestMode() ? 'Начать сессию проверки' : 'Начать изучение',
+      text: this.isTestMode()
+        ? `Начать сессию проверки${limitSuffix}`
+        : `Начать изучение${limitSuffix}`,
     });
     startBtn.addEventListener('click', () => {
       this.activePresetName = undefined;
