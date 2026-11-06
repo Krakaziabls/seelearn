@@ -542,10 +542,7 @@ export class StudyView extends ItemView {
           ? currentLimit
           : matchingCount;
 
-      const badgeText =
-        typeof currentLimit === 'number' && currentLimit < matchingCount
-          ? `В очереди: ${effectiveCount} из ${matchingCount}`
-          : `В очереди: ${matchingCount}`;
+      const badgeText = `В очереди: ${effectiveCount}`;
 
       const badge = this.toolbarEl.createEl('button', {
         cls: 'seelearn-counter-badge is-interactive',
