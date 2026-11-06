@@ -56,6 +56,7 @@ export class StudyView extends ItemView {
   private srsFilter: SRSQueueFilter = 'all';
   private tagSearchQuery: string = '';
   private sessionQueue: Flashcard[] = [];
+  private lastSessionQueue: Flashcard[] = [];
   private currentIndex: number = 0;
   private isFlipped: boolean = false;
   private activeCardComponent: Component | null = null;
@@ -225,6 +226,7 @@ export class StudyView extends ItemView {
     }
 
     this.sessionQueue = [...filtered];
+    this.lastSessionQueue = [...filtered];
     this.currentIndex = 0;
     this.isFlipped = false;
     this.sessionState = 'active';
@@ -282,6 +284,10 @@ export class StudyView extends ItemView {
 
     // Update in-flight cards in place preserving active queue order
     this.sessionQueue = this.sessionQueue
+      .map((c) => cardsMap.get(c.id))
+      .filter((c): c is Flashcard => c !== undefined && this.cardMatchesScope(c));
+
+    this.lastSessionQueue = this.lastSessionQueue
       .map((c) => cardsMap.get(c.id))
       .filter((c): c is Flashcard => c !== undefined && this.cardMatchesScope(c));
 
@@ -1437,11 +1443,22 @@ export class StudyView extends ItemView {
         text: `Повторить ошибки (${this.sessionStats.failedCards.length})`,
       });
       repeatFailedBtn.addEventListener('click', () => {
-        this.sessionQueue = [...this.sessionStats.failedCards];
+        const failed = [...this.sessionStats.failedCards];
+        this.sessionQueue = [...failed];
+        this.lastSessionQueue = [...failed];
         this.sessionStats.failedCards = [];
         this.sessionState = 'active';
         this.currentIndex = 0;
         this.isFlipped = false;
+        this.historyStack = [];
+        this.sessionStats = {
+          totalReviewed: 0,
+          againCount: 0,
+          hardCount: 0,
+          goodCount: 0,
+          easyCount: 0,
+          failedCards: [],
+        };
         this.renderAll();
       });
     }
@@ -1451,7 +1468,7 @@ export class StudyView extends ItemView {
       text: 'Повторить всю сессию',
     });
     restartBtn.addEventListener('click', () => {
-      this.startSession();
+      this.restartLastSession();
     });
   }
 
@@ -1516,12 +1533,13 @@ topics:
       cls: 'clickable-icon seelearn-btn-icon seelearn-nav-shuffle-btn',
     });
     setIcon(shuffleBtn, 'shuffle');
-    setTooltip(
-      shuffleBtn,
-      this.sessionState === 'active'
-        ? 'Перемешать оставшиеся карточки в очереди'
-        : 'Перемешать колоду'
-    );
+    let shuffleTooltip = 'Перемешать колоду';
+    if (this.sessionState === 'active') {
+      shuffleTooltip = this.isFlipped
+        ? 'Перемешать карточки после текущей'
+        : 'Перемешать оставшиеся карточки в очереди';
+    }
+    setTooltip(shuffleBtn, shuffleTooltip);
     shuffleBtn.addEventListener('click', () => {
       this.shuffleQueue();
     });
@@ -1866,35 +1884,144 @@ topics:
     this.renderAll();
   }
 
+  /**
+   * Restarts the entire session with the exact same pool of cards
+   * in the last established queue order.
+   */
+  public restartLastSession(): void {
+    this.clearActiveTooltips();
+
+    if (this.lastSessionQueue.length === 0) {
+      this.startSession();
+      return;
+    }
+
+    const cardsMap = new Map(this.plugin.cards.map((c) => [c.id, c]));
+    const validCards = this.lastSessionQueue
+      .map((c) => cardsMap.get(c.id))
+      .filter((c): c is Flashcard => c !== undefined && this.cardMatchesScope(c));
+
+    if (validCards.length === 0) {
+      new Notice('Карточки предыдущей сессии больше недоступны');
+      this.sessionState = 'lobby';
+      this.resetSession();
+      return;
+    }
+
+    this.sessionQueue = [...validCards];
+    this.lastSessionQueue = [...validCards];
+    this.currentIndex = 0;
+    this.isFlipped = false;
+    this.sessionState = 'active';
+    this.historyStack = [];
+    this.sessionStats = {
+      totalReviewed: 0,
+      againCount: 0,
+      hardCount: 0,
+      goodCount: 0,
+      easyCount: 0,
+      failedCards: [],
+    };
+    new Notice('Сессия перезапущена в прежнем составе');
+    this.renderAll();
+  }
+
+  /**
+   * Updates lastSessionQueue so that whenever cards are shuffled during a session,
+   * repeating the session restores the exact last obtained sequence of cards.
+   */
+  private updateLastSessionQueue(toShuffle: Flashcard[], shuffled: Flashcard[]): void {
+    if (this.lastSessionQueue.length === 0 || toShuffle.length === 0) {
+      this.lastSessionQueue = [...this.sessionQueue];
+      return;
+    }
+
+    const toShuffleIdSet = new Set(toShuffle.map((c) => c.id));
+    const indices: number[] = [];
+    this.lastSessionQueue.forEach((card, idx) => {
+      if (toShuffleIdSet.has(card.id)) {
+        indices.push(idx);
+      }
+    });
+
+    let shuffledIdx = 0;
+    for (const pos of indices) {
+      if (shuffledIdx < shuffled.length) {
+        this.lastSessionQueue[pos] = shuffled[shuffledIdx];
+        shuffledIdx++;
+      }
+    }
+  }
+
   public shuffleQueue(): void {
     this.clearActiveTooltips();
-    if (this.sessionQueue.length <= 1) return;
 
     if (this.sessionState === 'active') {
-      const before = this.sessionQueue.slice(0, this.currentIndex + 1);
-      const remaining = this.sessionQueue.slice(this.currentIndex + 1);
-      if (remaining.length > 1) {
-        const shuffledRemaining = this.plugin.settings.interleaveTopics
-          ? interleaveCards(remaining)
-          : fisherYatesShuffle(remaining);
-        this.sessionQueue = [...before, ...shuffledRemaining];
+      if (this.sessionQueue.length <= 1) {
+        new Notice('В очереди осталась только одна карточка, перемешивание невозможно');
+        return;
+      }
+
+      if (!this.isFlipped) {
+        // Front side: current card and all subsequent cards participate in shuffle
+        const remainingCount = this.sessionQueue.length - this.currentIndex;
+        if (remainingCount <= 1) {
+          new Notice('В очереди осталась только одна карточка, перемешивание невозможно');
+          return;
+        }
+
+        const before = this.sessionQueue.slice(0, this.currentIndex);
+        const toShuffle = this.sessionQueue.slice(this.currentIndex);
+        const shuffled = this.plugin.settings.interleaveTopics
+          ? interleaveCards(toShuffle)
+          : fisherYatesShuffle(toShuffle);
+
+        this.sessionQueue = [...before, ...shuffled];
+        this.updateLastSessionQueue(toShuffle, shuffled);
+
         new Notice('Оставшиеся карточки в очереди перемешаны');
         this.renderAll();
       } else {
-        new Notice('В очереди недостаточно оставшихся карточек для перемешивания');
+        // Back side (flipped): keep current card flipped, shuffle cards strictly after current
+        const afterCount = this.sessionQueue.length - (this.currentIndex + 1);
+        if (afterCount === 0) {
+          new Notice('После текущей карточки нет других карточек для перемешивания');
+          return;
+        }
+        if (afterCount === 1) {
+          new Notice('После текущей карточки осталась только одна карточка, перемешивание невозможно');
+          return;
+        }
+
+        const before = this.sessionQueue.slice(0, this.currentIndex + 1);
+        const toShuffle = this.sessionQueue.slice(this.currentIndex + 1);
+        const shuffled = this.plugin.settings.interleaveTopics
+          ? interleaveCards(toShuffle)
+          : fisherYatesShuffle(toShuffle);
+
+        this.sessionQueue = [...before, ...shuffled];
+        this.updateLastSessionQueue(toShuffle, shuffled);
+
+        new Notice('Последующие карточки в очереди перемешаны');
+
+        // Current card stays on screen flipped. Update next arrow and nav bar
+        const nextArrowEl = this.cardAreaEl.querySelector<HTMLButtonElement>('.seelearn-side-arrow.next');
+        if (nextArrowEl) {
+          const isLastCard = this.currentIndex >= this.sessionQueue.length - 1;
+          const currentCard = this.sessionQueue[this.currentIndex];
+          const canAdvanceOnLast = !this.isTestMode() && isLastCard && (this.isFlipped || !currentCard?.hasBack);
+          nextArrowEl.disabled = isLastCard && !canAdvanceOnLast;
+          setTooltip(nextArrowEl, canAdvanceOnLast ? 'Завершить сессию (ArrowRight)' : 'Следующая карточка (ArrowRight)');
+        }
+        this.renderNavBar();
       }
     } else {
-      this.sessionQueue = this.plugin.settings.interleaveTopics
-        ? interleaveCards(this.sessionQueue)
-        : fisherYatesShuffle(this.sessionQueue);
-      this.currentIndex = 0;
-      this.isFlipped = false;
-      new Notice(
-        this.plugin.settings.interleaveTopics
-          ? 'Колода перемешана (с чередованием тем)'
-          : 'Колода перемешана (Фишер-Йетс)'
-      );
-      this.renderAll();
+      const filtered = this.getFilteredCards();
+      if (filtered.length <= 1) {
+        new Notice('В очереди недостаточно карточек для перемешивания');
+        return;
+      }
+      new Notice('Колода будет перемешана при старте сессии');
     }
   }
 

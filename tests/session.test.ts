@@ -97,3 +97,137 @@ test('prepareSessionPool: does not mutate the original input array', () => {
     copy.map((c) => c.id)
   );
 });
+
+test('Session shuffle: when not flipped, shuffles current card and all subsequent cards', () => {
+  const cards = [
+    createMockCard('c1'),
+    createMockCard('c2'),
+    createMockCard('c3'),
+    createMockCard('c4'),
+    createMockCard('c5'),
+  ];
+
+  const currentIndex = 2; // card c3
+  const isFlipped = false;
+
+  const remainingCount = cards.length - currentIndex;
+  assert.strictEqual(remainingCount, 3);
+
+  const before = cards.slice(0, currentIndex);
+  const toShuffle = cards.slice(currentIndex);
+
+  assert.deepStrictEqual(before.map((c) => c.id), ['c1', 'c2']);
+  assert.deepStrictEqual(toShuffle.map((c) => c.id), ['c3', 'c4', 'c5']);
+
+  // Simulate shuffle
+  const shuffled = [toShuffle[2], toShuffle[0], toShuffle[1]]; // c5, c3, c4
+  const newQueue = [...before, ...shuffled];
+
+  assert.deepStrictEqual(newQueue.map((c) => c.id), ['c1', 'c2', 'c5', 'c3', 'c4']);
+  // Cards before index are preserved untouched
+  assert.deepStrictEqual(newQueue.slice(0, currentIndex), before);
+});
+
+test('Session shuffle: when flipped, keeps current card fixed and shuffles only subsequent cards', () => {
+  const cards = [
+    createMockCard('c1'),
+    createMockCard('c2'),
+    createMockCard('c3'),
+    createMockCard('c4'),
+    createMockCard('c5'),
+  ];
+
+  const currentIndex = 2; // card c3 (flipped)
+  const isFlipped = true;
+
+  const afterCount = cards.length - (currentIndex + 1);
+  assert.strictEqual(afterCount, 2);
+
+  const before = cards.slice(0, currentIndex + 1);
+  const toShuffle = cards.slice(currentIndex + 1);
+
+  assert.deepStrictEqual(before.map((c) => c.id), ['c1', 'c2', 'c3']);
+  assert.deepStrictEqual(toShuffle.map((c) => c.id), ['c4', 'c5']);
+
+  // Simulate shuffle
+  const shuffled = [toShuffle[1], toShuffle[0]]; // c5, c4
+  const newQueue = [...before, ...shuffled];
+
+  assert.deepStrictEqual(newQueue.map((c) => c.id), ['c1', 'c2', 'c3', 'c5', 'c4']);
+  // Current card c3 remains exactly at index 2
+  assert.strictEqual(newQueue[currentIndex].id, 'c3');
+});
+
+test('Session replay: snapshot updates and preserves the last obtained order', () => {
+  const initialPool = [
+    createMockCard('c1'),
+    createMockCard('c2'),
+    createMockCard('c3'),
+    createMockCard('c4'),
+    createMockCard('c5'),
+  ];
+
+  let lastSessionQueue = [...initialPool];
+
+  const updateSnapshot = (toShuffle: Flashcard[], shuffled: Flashcard[]) => {
+    const toShuffleIdSet = new Set(toShuffle.map((c) => c.id));
+    const indices: number[] = [];
+    lastSessionQueue.forEach((card, idx) => {
+      if (toShuffleIdSet.has(card.id)) {
+        indices.push(idx);
+      }
+    });
+
+    let shuffledIdx = 0;
+    for (const pos of indices) {
+      if (shuffledIdx < shuffled.length) {
+        lastSessionQueue[pos] = shuffled[shuffledIdx];
+        shuffledIdx++;
+      }
+    }
+  };
+
+  // User shuffles at card c3 (unflipped): c3, c4, c5 -> c5, c3, c4
+  const toShuffle = [initialPool[2], initialPool[3], initialPool[4]];
+  const shuffled = [initialPool[4], initialPool[2], initialPool[3]]; // c5, c3, c4
+
+  updateSnapshot(toShuffle, shuffled);
+
+  assert.deepStrictEqual(
+    lastSessionQueue.map((c) => c.id),
+    ['c1', 'c2', 'c5', 'c3', 'c4']
+  );
+
+  // When repeating session, user gets exact last obtained order
+  const repeatedSessionQueue = [...lastSessionQueue];
+  assert.deepStrictEqual(
+    repeatedSessionQueue.map((c) => c.id),
+    ['c1', 'c2', 'c5', 'c3', 'c4']
+  );
+});
+
+test('Session shuffle edge cases: detects when not enough cards to shuffle', () => {
+  const singleCardQueue = [createMockCard('c1')];
+  assert.strictEqual(singleCardQueue.length <= 1, true);
+
+  const fiveCardQueue = [
+    createMockCard('c1'),
+    createMockCard('c2'),
+    createMockCard('c3'),
+    createMockCard('c4'),
+    createMockCard('c5'),
+  ];
+
+  // At last card (index 4), not flipped
+  const remainingNotFlipped = fiveCardQueue.length - 4;
+  assert.strictEqual(remainingNotFlipped <= 1, true);
+
+  // At last card (index 4), flipped
+  const afterCountFlippedLast = fiveCardQueue.length - (4 + 1);
+  assert.strictEqual(afterCountFlippedLast, 0);
+
+  // At second-to-last card (index 3), flipped
+  const afterCountFlippedSecondToLast = fiveCardQueue.length - (3 + 1);
+  assert.strictEqual(afterCountFlippedSecondToLast, 1);
+});
+

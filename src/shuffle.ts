@@ -23,8 +23,11 @@ export function fisherYatesShuffle<T>(items: readonly T[]): T[] {
  * cards belonging to the same topic/file.
  */
 export function interleaveCards(cards: readonly Flashcard[]): Flashcard[] {
-  if (cards.length <= 2) {
+  if (cards.length <= 1) {
     return [...cards];
+  }
+  if (cards.length === 2) {
+    return fisherYatesShuffle(cards);
   }
 
   // 1. Group cards by primary topic (or file name if no tags)
