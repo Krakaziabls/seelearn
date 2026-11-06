@@ -15,23 +15,26 @@ A persistent circular help button must be located in the left group of the navig
 - **AND** the tooltip says "Шпаргалка и справка"
 - **AND** computed styles adhere to 28x28px circular dimensions (\`border-radius: 50%\`) with standard 16px horizontal padding.
 
-### Requirement: Opening and Focusing the Cheatsheet Note
-Clicking the help button MUST present options to open the syntax cheatsheet (`Шпаргалка SeeLearn — Синтаксис.md`) or the methodology cheatsheet (`Шпаргалка SeeLearn — Методология.md`) and display the selected note in Obsidian editor view.
+### Requirement: Opening Cheatsheet Note and Revealing Examples Folder
+Clicking the help button MUST open the syntax cheatsheet (`Шпаргалка SeeLearn — Синтаксис.md`) directly in an editor tab without prompt or selection dialog, and MUST reveal and expand the `SeeLearn Examples` folder in Obsidian's File Explorer sidebar.
 
 #### Scenario: Cheatsheet tab already open
-- **GIVEN** an open leaf already displays the requested cheatsheet (`Шпаргалка SeeLearn — Синтаксис.md` or `Шпаргалка SeeLearn — Методология.md`)
-- **WHEN** the user selects the corresponding cheatsheet option
-- **THEN** that existing leaf is focused and activated without opening duplicate tabs.
+- **GIVEN** an open leaf already displays `Шпаргалка SeeLearn — Синтаксис.md`
+- **WHEN** the user clicks `.seelearn-nav-help-btn`
+- **THEN** that existing leaf is focused and activated without opening duplicate tabs
+- **AND** the `SeeLearn Examples` folder is revealed and expanded in the file explorer sidebar.
 
 #### Scenario: Cheatsheet note closed
-- **GIVEN** no open leaf contains the requested cheatsheet note
-- **WHEN** the user selects the cheatsheet option
-- **THEN** the note is opened in a new workspace leaf (`tab`).
+- **GIVEN** no open leaf contains `Шпаргалка SeeLearn — Синтаксис.md`
+- **WHEN** the user clicks `.seelearn-nav-help-btn`
+- **THEN** the note is opened in a new workspace leaf (`tab`)
+- **AND** the `SeeLearn Examples` folder is revealed and expanded in the file explorer sidebar.
 
 #### Scenario: Cheatsheet file deleted or missing
-- **GIVEN** the requested cheatsheet file has been deleted or moved
-- **WHEN** the user attempts to open it
-- **THEN** the plugin automatically recreates the file in `SeeLearn Examples/` and opens it.
+- **GIVEN** `Шпаргалка SeeLearn — Синтаксис.md` has been deleted or moved
+- **WHEN** the user clicks `.seelearn-nav-help-btn`
+- **THEN** the plugin automatically recreates the file in `SeeLearn Examples/` and opens it
+- **AND** the `SeeLearn Examples` folder is revealed and expanded in the file explorer sidebar.
 
 ### Requirement: Retirement of Legacy Methodology Link and Modal
 The temporary inline link and modal dialog must be removed to streamline the UI.

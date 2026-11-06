@@ -771,6 +771,7 @@ topics:
       const view = leaf.view;
       if (view && 'file' in view && (view as any).file?.path === targetPath) {
         app.workspace.setActiveLeaf(leaf, { focus: true });
+        OnboardingManager.revealFolderInFileExplorer(app, OnboardingManager.EXAMPLES_DIR);
         return;
       }
     }
@@ -779,5 +780,81 @@ topics:
     const leaf = app.workspace.getLeaf('tab');
     await leaf.openFile(targetFile);
     app.workspace.setActiveLeaf(leaf, { focus: true });
+    OnboardingManager.revealFolderInFileExplorer(app, OnboardingManager.EXAMPLES_DIR);
+  }
+
+  /**
+   * Reveals and expands the examples folder in Obsidian's File Explorer sidebar.
+   */
+  public static revealFolderInFileExplorer(
+    app: App,
+    folderPath: string = OnboardingManager.EXAMPLES_DIR
+  ): void {
+    const { workspace } = app;
+    if (!workspace) return;
+
+    // 1. Expand left split if collapsed
+    const leftSplit = (workspace as any).leftSplit;
+    if (leftSplit && typeof leftSplit.collapsed === 'boolean' && leftSplit.collapsed) {
+      if (typeof leftSplit.expand === 'function') {
+        try {
+          leftSplit.expand();
+        } catch {
+          // Ignore
+        }
+      }
+    }
+
+    // 2. Reveal file-explorer leaf and expand the folder item
+    const fileExplorerLeaves = workspace.getLeavesOfType('file-explorer');
+    if (fileExplorerLeaves.length > 0) {
+      const fileExplorerLeaf = fileExplorerLeaves[0];
+      try {
+        workspace.revealLeaf(fileExplorerLeaf);
+      } catch {
+        // Ignore
+      }
+
+      const fileExplorerView = fileExplorerLeaf.view as any;
+      if (fileExplorerView) {
+        const fileItems = fileExplorerView.fileItems;
+        if (fileItems && fileItems[folderPath]) {
+          const folderItem = fileItems[folderPath];
+          if (typeof folderItem.setCollapsed === 'function') {
+            try {
+              folderItem.setCollapsed(false);
+            } catch {
+              // Ignore
+            }
+          }
+          if (folderItem.selfEl && typeof folderItem.selfEl.scrollIntoView === 'function') {
+            try {
+              folderItem.selfEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            } catch {
+              // Ignore
+            }
+          }
+        }
+
+        const abstractFolder = app.vault.getAbstractFileByPath(folderPath);
+        if (abstractFolder && typeof fileExplorerView.revealInFolder === 'function') {
+          try {
+            fileExplorerView.revealInFolder(abstractFolder);
+          } catch {
+            // Ignore
+          }
+        }
+      }
+    }
+
+    // 3. Trigger native reveal command if available
+    const commands = (app as any).commands;
+    if (commands && typeof commands.executeCommandById === 'function') {
+      try {
+        commands.executeCommandById('file-explorer:reveal-active-file');
+      } catch {
+        // Ignore
+      }
+    }
   }
 }

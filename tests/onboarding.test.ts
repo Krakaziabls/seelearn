@@ -331,3 +331,58 @@ test('Onboarding: openCheatsheetNote focuses existing leaf or opens a new tab fo
     'New tab must open methodology cheatsheet file'
   );
 });
+
+test('Onboarding: revealFolderInFileExplorer expands left split and file explorer folder', () => {
+  let leftSplitExpanded = false;
+  let leafRevealed = false;
+  let folderCollapsedState = true;
+  let scrolledIntoView = false;
+
+  const folderItemMock = {
+    setCollapsed: (collapsed: boolean) => {
+      folderCollapsedState = collapsed;
+    },
+    selfEl: {
+      scrollIntoView: () => {
+        scrolledIntoView = true;
+      },
+    },
+  };
+
+  const fileExplorerLeafMock = {
+    view: {
+      fileItems: {
+        [OnboardingManager.EXAMPLES_DIR]: folderItemMock,
+      },
+      revealInFolder: () => {},
+    },
+  };
+
+  const mockApp = {
+    vault: {
+      getAbstractFileByPath: () => ({ path: OnboardingManager.EXAMPLES_DIR }),
+    },
+    workspace: {
+      leftSplit: {
+        collapsed: true,
+        expand: () => {
+          leftSplitExpanded = true;
+        },
+      },
+      getLeavesOfType: (type: string) => (type === 'file-explorer' ? [fileExplorerLeafMock] : []),
+      revealLeaf: (leaf: any) => {
+        if (leaf === fileExplorerLeafMock) leafRevealed = true;
+      },
+    },
+    commands: {
+      executeCommandById: () => {},
+    },
+  } as unknown as App;
+
+  OnboardingManager.revealFolderInFileExplorer(mockApp, OnboardingManager.EXAMPLES_DIR);
+
+  assert.strictEqual(leftSplitExpanded, true, 'Left split should be expanded if collapsed');
+  assert.strictEqual(leafRevealed, true, 'File explorer leaf should be revealed');
+  assert.strictEqual(folderCollapsedState, false, 'Folder item should be expanded (not collapsed)');
+  assert.strictEqual(scrolledIntoView, true, 'Folder item should be scrolled into view');
+});
