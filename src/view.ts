@@ -36,7 +36,6 @@ export class StudyView extends ItemView {
   private selectedScope: string = ''; // '' for all, 'folder:...' or 'file:...'
   private srsFilter: SRSQueueFilter = 'all';
   private tagSearchQuery: string = '';
-  private isTagsBarCollapsed: boolean = false;
   private sessionQueue: Flashcard[] = [];
   private currentIndex: number = 0;
   private isFlipped: boolean = false;
@@ -448,32 +447,7 @@ export class StudyView extends ItemView {
       this.resetSession();
     });
 
-    // 3. Tags Bar Toggle Button (visible only in lobby when tags are available)
-    if (this.sessionState === 'lobby') {
-      const availableTags = this.getAllAvailableTags();
-      if (availableTags.length > 0) {
-        const isCollapsed = this.isTagsBarCollapsed;
-        const tagsToggleBtn = leftGroup.createEl('button', {
-          cls: `clickable-icon seelearn-btn-icon seelearn-tags-toggle-btn ${!isCollapsed ? 'is-active' : ''}`,
-          title: isCollapsed ? 'Показать темы (#теги)' : 'Скрыть темы (#теги)',
-        });
-        setIcon(tagsToggleBtn, 'tags');
-        setTooltip(
-          tagsToggleBtn,
-          isCollapsed ? 'Показать темы (#теги)' : 'Скрыть темы (#теги)'
-        );
-        if (this.selectedTags.size > 0) {
-          tagsToggleBtn.createSpan({ cls: 'seelearn-tags-active-dot' });
-        }
-        tagsToggleBtn.addEventListener('click', () => {
-          this.isTagsBarCollapsed = !this.isTagsBarCollapsed;
-          this.renderToolbar();
-          this.renderTagsBar();
-        });
-      }
-    }
-
-    // 4. Scoped SRS Queue Filter Pills (reflects ONLY cards in selected scope! Visible only in lobby)
+    // 3. Scoped SRS Queue Filter Pills (reflects ONLY cards in selected scope! Visible only in lobby)
     if (this.sessionState === 'lobby') {
       const scopedCards = this.plugin.cards.filter((c) => this.cardMatchesScope(c));
       const breakdown = this.plugin.storage.getSRSBreakdown(scopedCards);
@@ -644,9 +618,8 @@ export class StudyView extends ItemView {
   private renderTagsBar(): void {
     this.tagsBarEl.empty();
 
-    // 1. Hide completely when not in lobby (active session or finished summary)
-    // 2. Hide when user explicitly collapsed the tags bar
-    if (this.sessionState !== 'lobby' || this.isTagsBarCollapsed) {
+    // Hide completely when not in lobby (active session or finished summary)
+    if (this.sessionState !== 'lobby') {
       this.tagsBarEl.style.display = 'none';
       return;
     }
@@ -685,19 +658,6 @@ export class StudyView extends ItemView {
 
     const chipsContainer = this.tagsBarEl.createDiv({ cls: 'seelearn-tags-chips-container' });
     this.renderTagChipsList(chipsContainer, tags);
-
-    // Collapse button at the end of tags bar
-    const collapseBtn = this.tagsBarEl.createEl('button', {
-      cls: 'clickable-icon seelearn-btn-icon seelearn-tags-collapse-btn',
-      title: 'Свернуть темы',
-    });
-    setIcon(collapseBtn, 'chevron-up');
-    setTooltip(collapseBtn, 'Свернуть темы');
-    collapseBtn.addEventListener('click', () => {
-      this.isTagsBarCollapsed = true;
-      this.renderToolbar();
-      this.renderTagsBar();
-    });
   }
 
   private renderTagChipsList(
