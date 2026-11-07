@@ -14,11 +14,13 @@ import {
   Menu,
 } from 'obsidian';
 import type SeeLearnPlugin from './main';
-import { CardProgressRecord, CardSizePreset, Flashcard, SRSQueueFilter, TestPreset, ValidationWarning } from './types';
+import { CardProgressRecord, CardSizePreset, Flashcard, ScopeInput, SRSQueueFilter, TestPreset, ValidationWarning, WorkspaceScope } from './types';
 import { fisherYatesShuffle, interleaveCards } from './shuffle';
 import { prepareSessionPool } from './session';
 import { getSRSIntervalPreviews, isCardDue, isCardLeech, isCardNew, SRSRating, ScheduleContext } from './srs';
 import { OnboardingManager } from './onboarding';
+import { WorkspaceScopeModal } from './scope-modal';
+import { cardMatchesScope, formatScopeLabel, normalizeScope } from './scope';
 
 export const VIEW_TYPE_SEELEARN = 'seelearn-study-view';
 
@@ -53,7 +55,7 @@ export class StudyView extends ItemView {
   plugin: SeeLearnPlugin;
   private selectedTags: Set<string> = new Set();
   private selectedTagsOrder: string[] = [];
-  private selectedScope: string = ''; // '' for all, 'folder:...' or 'file:...'
+  private selectedScope: ScopeInput = { all: true, folders: [], files: [] };
   private srsFilter: SRSQueueFilter = 'all';
   private tagSearchQuery: string = '';
   private sessionQueue: Flashcard[] = [];
@@ -355,16 +357,7 @@ export class StudyView extends ItemView {
   }
 
   private cardMatchesScope(card: Flashcard): boolean {
-    if (!this.selectedScope) return true;
-    if (this.selectedScope.startsWith('folder:')) {
-      const folder = this.selectedScope.substring(7);
-      return card.filePath === folder || card.filePath.startsWith(`${folder}/`);
-    }
-    if (this.selectedScope.startsWith('file:')) {
-      const file = this.selectedScope.substring(5);
-      return card.filePath === file;
-    }
-    return true;
+    return cardMatchesScope(card, this.selectedScope);
   }
 
   private getFilteredCards(): Flashcard[] {
@@ -415,38 +408,6 @@ export class StudyView extends ItemView {
       .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
   }
 
-  private getAvailableScopes(): {
-    folders: { path: string; label: string; count: number }[];
-    files: { path: string; label: string; count: number }[];
-  } {
-    const folderCounts = new Map<string, number>();
-    const fileCounts = new Map<string, number>();
-
-    for (const card of this.plugin.cards) {
-      fileCounts.set(card.filePath, (fileCounts.get(card.filePath) || 0) + 1);
-
-      const parts = card.filePath.split('/');
-      let currentFolder = '';
-      for (let i = 0; i < parts.length - 1; i++) {
-        currentFolder = currentFolder ? `${currentFolder}/${parts[i]}` : parts[i];
-        folderCounts.set(currentFolder, (folderCounts.get(currentFolder) || 0) + 1);
-      }
-    }
-
-    const folders = Array.from(folderCounts.entries())
-      .map(([path, count]) => ({ path, label: `${path}/`, count }))
-      .sort((a, b) => a.path.localeCompare(b.path));
-
-    const files = Array.from(fileCounts.entries())
-      .map(([path, count]) => ({
-        path,
-        label: `${path.split('/').pop() || path}`,
-        count,
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-
-    return { folders, files };
-  }
 
   private renderAll(): void {
     this.clearActiveTooltips();
@@ -490,44 +451,35 @@ export class StudyView extends ItemView {
       this.resetSession();
     });
 
-    // 2. Scope Selector Dropdown (Folder / File)
-    const { folders, files } = this.getAvailableScopes();
-    const scopeSelect = leftGroup.createEl('select', { cls: 'dropdown seelearn-file-select' });
-
-    const defaultOption = scopeSelect.createEl('option', {
-      value: '',
-      text: `Все заметки (${this.plugin.cards.length})`,
+    // 2. Scope Selector Trigger Button
+    const scopeBtn = leftGroup.createEl('button', {
+      cls: 'seelearn-scope-trigger-btn',
     });
-    if (!this.selectedScope) defaultOption.selected = true;
+    const currentScopeLabel = formatScopeLabel(this.selectedScope, this.plugin.cards);
+    setTooltip(scopeBtn, `Область карточек: ${currentScopeLabel}`);
 
-    if (folders.length > 0) {
-      const folderGroup = scopeSelect.createEl('optgroup');
-      folderGroup.label = 'Папки';
-      for (const f of folders) {
-        const opt = folderGroup.createEl('option', {
-          value: `folder:${f.path}`,
-          text: `${f.label} (${f.count})`,
-        });
-        if (this.selectedScope === `folder:${f.path}`) opt.selected = true;
-      }
-    }
+    const folderIconSpan = scopeBtn.createSpan({ cls: 'seelearn-icon-inline' });
+    setIcon(folderIconSpan, 'folder-tree');
 
-    if (files.length > 0) {
-      const fileGroup = scopeSelect.createEl('optgroup');
-      fileGroup.label = 'Заметки';
-      for (const f of files) {
-        const opt = fileGroup.createEl('option', {
-          value: `file:${f.path}`,
-          text: `${f.label} (${f.count})`,
-        });
-        if (this.selectedScope === `file:${f.path}`) opt.selected = true;
-      }
-    }
+    scopeBtn.createSpan({
+      cls: 'seelearn-scope-btn-label',
+      text: currentScopeLabel,
+    });
 
-    scopeSelect.addEventListener('change', () => {
-      this.selectedScope = scopeSelect.value;
-      this.sessionState = 'lobby';
-      this.resetSession();
+    const chevronSpan = scopeBtn.createSpan({ cls: 'seelearn-icon-inline seelearn-chevron' });
+    setIcon(chevronSpan, 'chevron-down');
+
+    scopeBtn.addEventListener('click', () => {
+      new WorkspaceScopeModal(
+        this.app,
+        this.plugin.cards,
+        this.selectedScope,
+        (newScope) => {
+          this.selectedScope = newScope;
+          this.sessionState = 'lobby';
+          this.resetSession();
+        }
+      ).open();
     });
 
     // 3. Scoped SRS Queue Filter Pills (reflects ONLY cards in selected scope! Visible only in lobby)
@@ -1201,12 +1153,7 @@ export class StudyView extends ItemView {
     const iconWrap = lobbyBox.createDiv({ cls: 'seelearn-lobby-icon' });
     setIcon(iconWrap, this.isTestMode() ? 'crosshair' : 'book-open');
 
-    let scopeLabel = 'Все заметки';
-    if (this.selectedScope.startsWith('folder:')) {
-      scopeLabel = `Папка: ${this.selectedScope.substring(7)}`;
-    } else if (this.selectedScope.startsWith('file:')) {
-      scopeLabel = `Заметка: ${this.selectedScope.substring(5).split('/').pop()}`;
-    }
+    const scopeLabel = formatScopeLabel(this.selectedScope, this.plugin.cards);
 
     lobbyBox.createEl('h2', {
       cls: 'seelearn-lobby-title',
@@ -1227,7 +1174,7 @@ export class StudyView extends ItemView {
         text: 'Сбросить фильтры',
       });
       resetBtn.addEventListener('click', () => {
-        this.selectedScope = '';
+        this.selectedScope = { all: true, folders: [], files: [] };
         this.selectedTags.clear();
         this.selectedTagsOrder = [];
         this.srsFilter = 'all';
@@ -1309,6 +1256,7 @@ export class StudyView extends ItemView {
           this.app,
           this.selectedScope,
           Array.from(this.selectedTags),
+          this.plugin.cards,
           (preset) => {
             this.plugin.storage.saveTestPreset(preset);
             new Notice(`Тест «${preset.name}» сохранен!`);
@@ -1339,10 +1287,8 @@ export class StudyView extends ItemView {
         left.createDiv({ cls: 'seelearn-preset-name', text: preset.name });
 
         const meta = left.createDiv({ cls: 'seelearn-preset-meta' });
-        const scopeText = preset.scope
-          ? (preset.scope.startsWith('folder:') ? `📁 ${preset.scope.substring(7)}` : `📄 ${preset.scope.substring(5).split('/').pop()}`)
-          : '🌐 Все заметки';
-        meta.createSpan({ text: scopeText });
+        const scopeText = formatScopeLabel(preset.scope, this.plugin.cards);
+        meta.createSpan({ text: `🎯 ${scopeText}` });
         if (preset.tags.length > 0) {
           meta.createSpan({ text: ' • ' + preset.tags.map((t) => '#' + t).join(' ') });
         }
@@ -2411,19 +2357,22 @@ class WarningsModal extends Modal {
  */
 export class SaveTestModal extends Modal {
   private name: string = '';
-  private targetScope: string;
+  private targetScope: ScopeInput;
   private tags: string[];
+  private cards: Flashcard[];
   private onSave: (preset: TestPreset) => void;
 
   constructor(
     app: App,
-    currentScope: string,
+    currentScope: ScopeInput,
     currentTags: string[],
+    cards: Flashcard[],
     onSave: (preset: TestPreset) => void
   ) {
     super(app);
     this.targetScope = currentScope;
     this.tags = [...currentTags];
+    this.cards = cards;
     this.onSave = onSave;
   }
 
@@ -2435,12 +2384,7 @@ export class SaveTestModal extends Modal {
 
     contentEl.createEl('h2', { text: 'Сохранить набор карточек в Тест' });
 
-    let scopeDesc = 'Все заметки';
-    if (this.targetScope.startsWith('folder:')) {
-      scopeDesc = `Папка: ${this.targetScope.substring(7)}`;
-    } else if (this.targetScope.startsWith('file:')) {
-      scopeDesc = `Заметка: ${this.targetScope.substring(5).split('/').pop()}`;
-    }
+    const scopeDesc = formatScopeLabel(this.targetScope, this.cards);
 
     const infoBox = contentEl.createDiv({ cls: 'seelearn-preset-info-box' });
     infoBox.createEl('p', { text: `Область: ${scopeDesc}` });
@@ -2480,7 +2424,7 @@ export class SaveTestModal extends Modal {
       const preset: TestPreset = {
         id: 'test_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6),
         name: trimmedName,
-        scope: this.targetScope,
+        scope: normalizeScope(this.targetScope),
         tags: this.tags,
         createdAt: new Date().toISOString(),
         runsCount: 0,

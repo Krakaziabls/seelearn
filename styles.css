@@ -105,15 +105,41 @@ button.seelearn-nav-help-btn:hover {
   color: var(--text-normal);
 }
 
-.seelearn-file-select {
-  max-width: 240px;
-  font-size: 0.88em;
+.seelearn-scope-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  font-size: 0.85em;
+  font-weight: 500;
   background-color: var(--background-primary);
   color: var(--text-normal);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s, 4px);
-  padding: 4px 8px;
+  padding: 4px 9px;
   cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.seelearn-scope-trigger-btn:hover {
+  background-color: var(--background-modifier-hover);
+  border-color: var(--text-faint);
+}
+
+.seelearn-scope-btn-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 170px;
+}
+
+.seelearn-scope-trigger-btn .seelearn-chevron {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
 }
 
 .seelearn-btn-icon {
@@ -1721,4 +1747,289 @@ button.seelearn-nav-help-btn:hover {
 .workspace-tab-header.is-flashing {
   border-radius: var(--tab-curve, 10px) var(--tab-curve, 10px) 0 0 !important;
   mix-blend-mode: normal !important;
+}
+
+/* --------------------------------------------------------------------------
+   Workspace Scope Modal
+   -------------------------------------------------------------------------- */
+
+.modal.seelearn-scope-modal,
+.modal-container:has(.seelearn-scope-modal) .modal {
+  width: min(640px, 92vw) !important;
+  max-width: 640px !important;
+  max-height: 85vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 20px !important;
+  box-sizing: border-box !important;
+  margin: auto !important;
+}
+
+.seelearn-scope-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  gap: 12px;
+}
+
+.seelearn-scope-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.seelearn-scope-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.seelearn-scope-title-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.seelearn-scope-title {
+  margin: 0;
+  font-size: 1.25em;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.seelearn-scope-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.seelearn-scope-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  color: var(--text-muted);
+  z-index: 2;
+}
+
+.seelearn-scope-search-icon svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+.seelearn-scope-modal .seelearn-scope-search-box input.seelearn-scope-search-input,
+.seelearn-scope-modal input.seelearn-scope-search-input,
+.seelearn-scope-search-input {
+  width: 100% !important;
+  padding: 8px 32px 8px 36px !important;
+  box-sizing: border-box !important;
+  background-color: var(--background-secondary) !important;
+  border: 1px solid var(--background-modifier-border) !important;
+  border-radius: var(--radius-m, 6px) !important;
+  color: var(--text-normal) !important;
+  font-size: 0.9em !important;
+  line-height: 1.4 !important;
+  outline: none !important;
+  transition: border-color 0.15s ease !important;
+}
+
+.seelearn-scope-modal .seelearn-scope-search-box input.seelearn-scope-search-input:focus,
+.seelearn-scope-modal input.seelearn-scope-search-input:focus,
+.seelearn-scope-search-input:focus {
+  border-color: var(--interactive-accent) !important;
+  box-shadow: 0 0 0 1px var(--interactive-accent) !important;
+}
+
+.seelearn-scope-clear-search {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-s, 4px);
+  z-index: 2;
+}
+
+.seelearn-scope-clear-search:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+.seelearn-scope-clear-search svg {
+  width: 14px;
+  height: 14px;
+}
+
+.seelearn-scope-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.seelearn-scope-actions-left,
+.seelearn-scope-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.seelearn-scope-btn-sm {
+  font-size: 0.8em !important;
+  padding: 3px 10px !important;
+  height: 26px !important;
+  line-height: 1 !important;
+}
+
+.seelearn-scope-tree {
+  flex: 1;
+  min-height: 220px;
+  max-height: 440px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 6px);
+  background-color: var(--background-secondary);
+  padding: 6px 0;
+}
+
+.seelearn-scope-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  margin: 1px 6px;
+  border-radius: var(--radius-s, 4px);
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.9em;
+  transition: background-color 0.12s ease;
+}
+
+.seelearn-scope-item:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.seelearn-scope-item.is-selected {
+  background-color: rgba(99, 102, 241, 0.08);
+}
+
+.seelearn-scope-folder-row {
+  font-weight: 500;
+}
+
+.seelearn-scope-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+  border-radius: var(--radius-s, 4px);
+  flex-shrink: 0;
+}
+
+.seelearn-scope-toggle-icon:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+.seelearn-scope-toggle-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.seelearn-scope-checkbox {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--interactive-accent);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.seelearn-scope-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.seelearn-scope-item-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.seelearn-scope-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-normal);
+}
+
+.seelearn-scope-badge {
+  font-size: 0.78em;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.seelearn-scope-children {
+  display: flex;
+  flex-direction: column;
+}
+
+.seelearn-scope-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.seelearn-scope-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+  gap: 12px;
+}
+
+.seelearn-scope-summary {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seelearn-scope-footer-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.seelearn-scope-modal .seelearn-btn.is-disabled,
+.seelearn-scope-modal .seelearn-btn:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
 }

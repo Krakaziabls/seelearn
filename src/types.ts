@@ -34,10 +34,18 @@ export interface StudyStreakStats {
 
 export type TemplateStyle = 'comment' | 'plain';
 
+export interface WorkspaceScope {
+  all: boolean;
+  folders: string[]; // Folder paths relative to vault, e.g. "Biology"
+  files: string[];   // File paths relative to vault, e.g. "Biology/Cell.md"
+}
+
+export type ScopeInput = WorkspaceScope | string | null | undefined;
+
 export interface TestPreset {
   id: string;
   name: string;
-  scope: string; // '' for all, 'folder:...' or 'file:...'
+  scope: string | WorkspaceScope; // '' for all, 'folder:...' or 'file:...', or structured WorkspaceScope
   tags: string[];
   createdAt: string;
   lastRun?: string;
