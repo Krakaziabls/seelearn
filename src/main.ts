@@ -256,7 +256,7 @@ export default class SeeLearnPlugin extends Plugin {
     if (leaves.length > 0) {
       leaf = leaves[0];
     } else {
-      leaf = workspace.getLeaf(false);
+      leaf = workspace.getLeaf('tab');
       await leaf.setViewState({
         type: VIEW_TYPE_SEELEARN,
         active: true,
@@ -264,7 +264,10 @@ export default class SeeLearnPlugin extends Plugin {
     }
 
     if (leaf) {
-      workspace.revealLeaf(leaf);
+      if (leaf.getRoot() !== workspace.rootSplit) {
+        workspace.revealLeaf(leaf);
+      }
+      workspace.setActiveLeaf(leaf, { focus: true });
     }
   }
 

@@ -1714,6 +1714,11 @@ button.seelearn-nav-help-btn:hover {
   display: none !important;
 }
 
+/* --------------------------------------------------------------------------
+   Workspace Tab Header Protection
+   -------------------------------------------------------------------------- */
 
-
-
+.workspace-tab-header.is-flashing {
+  border-radius: var(--tab-curve, 10px) var(--tab-curve, 10px) 0 0 !important;
+  mix-blend-mode: normal !important;
+}

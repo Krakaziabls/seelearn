@@ -2,6 +2,7 @@ import {
   ItemView,
   WorkspaceLeaf,
   MarkdownRenderer,
+  MarkdownView,
   Component,
   TFile,
   setIcon,
@@ -955,6 +956,7 @@ export class StudyView extends ItemView {
     setIcon(jumpIconSpan, 'external-link');
 
     jumpBtn.addEventListener('click', (e) => {
+      e.preventDefault();
       e.stopPropagation();
       this.clearActiveTooltips();
       this.openCardInNote(card);
@@ -2100,21 +2102,58 @@ topics:
     this.clearActiveTooltips();
     const file = this.app.vault.getAbstractFileByPath(card.filePath);
     if (file instanceof TFile) {
-      let leaf = this.app.workspace.getLeavesOfType('markdown')[0];
-      if (!leaf || leaf.view === this) {
+      // 1. Check if an existing markdown leaf already has this file open
+      const markdownLeaves = this.app.workspace.getLeavesOfType('markdown');
+      let leaf = markdownLeaves.find((l) => {
+        const view = l.view;
+        return view instanceof MarkdownView && view.file?.path === card.filePath;
+      });
+
+      // 2. If not found, open in a new workspace tab
+      if (!leaf) {
         leaf = this.app.workspace.getLeaf('tab');
       }
+
       const targetLine = Math.max(0, card.lineStart - 1);
+      const endLine = Math.max(targetLine, card.lineEnd - 1);
+
       await leaf.openFile(file, {
         eState: {
           line: targetLine,
-          cursor: {
-            from: { line: targetLine, ch: 0 },
-            to: { line: targetLine, ch: 0 },
-          },
         },
       });
-      this.app.workspace.revealLeaf(leaf);
+
+      if (leaf.getRoot() !== this.app.workspace.rootSplit) {
+        this.app.workspace.revealLeaf(leaf);
+      }
+      this.app.workspace.setActiveLeaf(leaf, { focus: true });
+
+      // Ephemerally flash the entire card block without persistent text selection
+      const view = leaf.view;
+      if (view instanceof MarkdownView && view.editor) {
+        const editor = view.editor;
+        const lastLineLength = editor.getLine(endLine)?.length ?? 0;
+        view.setEphemeralState({
+          startLoc: { line: targetLine, col: 0 },
+          endLoc: { line: endLine, col: lastLineLength },
+          focus: true,
+        });
+        editor.setCursor({ line: targetLine, ch: 0 });
+        editor.scrollIntoView(
+          {
+            from: { line: targetLine, ch: 0 },
+            to: { line: endLine, ch: lastLineLength },
+          },
+          true
+        );
+
+        // Auto-remove the ephemeral flash after 1.5s
+        window.setTimeout(() => {
+          if (editor && typeof (editor as any).removeHighlights === 'function') {
+            (editor as any).removeHighlights('is-flashing');
+          }
+        }, 1500);
+      }
     } else {
       new Notice(`Файл не найден: ${card.filePath}`);
     }
